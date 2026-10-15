@@ -4,6 +4,23 @@
 **Findings covered:** SIG-01 (endpoint hijack → key + source exfil), SIG-03 (untrusted-cwd artifacts), SIG-04 (false-success health check), SIG-05 (tiktoken CDN dependency)
 **Use only against binaries you are licensed to test, on systems you control.**
 
+## ⚡ One-command reproduction (recommended)
+
+`run_all_pocs.py` is the **master runner** — it reproduces every finding of the engagement
+(SIG-01…06 + CHK-01…08; see `FINAL-REPORT-signal-2026.9.0.md`) in a single invocation:
+
+```bash
+python3 repro/run_all_pocs.py --binary ./signal-pyarmor-linux-x86_64
+# offline machines: add --tiktoken-file /path/to/cl100k_base.tiktoken
+# single finding:   --only SIG-01a,SIG-01b,SIG-01c     (list ids: --list)
+```
+
+It stands up its own capture endpoint (default `127.0.0.1:8899/v1`; change with `--port`),
+runs each PoC in a per-run workdir (`--workdir`, default `./poc-evidence-<timestamp>`), and
+writes a per-PoC `.txt` + `SUMMARY.md`. Everything below (individual walkthroughs of
+SIG-01…05 with the older per-finding script `repro_signal_vapt.py`) remains valid as a
+manual deep-dive; the two scripts share the same attack logic.
+
 ---
 
 ## 0. Prerequisites
