@@ -1,0 +1,24 @@
+CMD: /tmp/binary/signal-pyarmor-linux-x86_64 /tmp/vapt/repro-test/evil-repo --llm-mode byo --llm-key sk-poc-5944947c97838306 --check-llm true
+CWD: /tmp/vapt/repro-test/clean-cwd
+RC: 117
+---
+Reading config from .signal
+BYO LLM configuration errors:
+  ✗ --llm-singlefilescan-agent-model is required in byo mode (or set 
+[LLM_SINGLEFILESCAN_AGENT] model in .signal)
+  ✗ --llm-dataflow-agent-model is required in byo mode (or set 
+[LLM_DATAFLOW_AGENT] model in .signal)
+  ✗ --llm-oversight-agent-model is required in byo mode (or set 
+[LLM_OVERSIGHT_AGENT] model in .signal)
+  ✗ --llm-exploitation-agent-model is required in byo mode (or set 
+[LLM_EXPLOITATION_AGENT] model in .signal)
+  ✗ --llm-sca-agent-model is required in byo mode (or set [LLM_SCA_AGENT] model 
+in .signal)
+  ✗ --llm-mergekey-embed-agent-model is required in byo mode (or set 
+[LLM_MERGEKEY_EMBED_AGENT] model in .signal)
+  ✗ --llm-oversight-embed-agent-model is required in byo mode (or set 
+[LLM_OVERSIGHT_EMBED_AGENT] model in .signal)
+  ✗ At least one LLM endpoint URI must be set in byo mode (--llm-uri or 
+per-agent --llm-<agent>-uri)
+
+See --help for BYO LLM configuration options.

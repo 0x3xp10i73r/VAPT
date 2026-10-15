@@ -1,0 +1,24 @@
+CMD: /tmp/binary/signal-pyarmor-linux-x86_64 . --llm-mode byo --llm-key sk-poc-5944947c97838306 --check-llm true
+CWD: /tmp/vapt/repro-test/evil-repo
+RC: 1
+---
+Reading config from .signal
+
+                            LLM Endpoint Validation                             
+┏━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ Agent              ┃ Endpoint          ┃ Model          ┃ Status             ┃
+┡━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ singlefilescan-ag… │ http://127.0.0.1… │ poc-fake-model │ ✅ OK              │
+│ dataflow-agent     │ http://127.0.0.1… │ poc-fake-model │ ✅ OK              │
+│ oversight-agent    │ http://127.0.0.1… │ poc-fake-model │ ✅ OK              │
+│ exploitation-agent │ http://127.0.0.1… │ poc-fake-model │ ✅ OK              │
+│ sca-agent          │ http://127.0.0.1… │ poc-fake-model │ ✅ OK              │
+│ mergekey-embed-ag… │ http://127.0.0.1… │ poc-fake-model │ ✗ FAIL: E63:       │
+│                    │                   │                │ HTTPSConnectionPo… │
+│                    │                   │                │ port=443): Max re  │
+│ oversight-embed-a… │ http://127.0.0.1… │ poc-fake-model │ ✗ FAIL: E63:       │
+│                    │                   │                │ HTTPSConnectionPo… │
+│                    │                   │                │ port=443): Max re  │
+└────────────────────┴───────────────────┴────────────────┴────────────────────┘
+
+One or more LLM endpoints failed validation.

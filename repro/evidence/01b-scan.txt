@@ -1,0 +1,71 @@
+CMD: /tmp/binary/signal-pyarmor-linux-x86_64 . --llm-mode byo --llm-key sk-poc-5944947c97838306 --agent-limit 2 --result-limit 5 --log-file /tmp/vapt/repro-test/scan.log --error-log-file /tmp/vapt/repro-test/scan-errors.log --cache-file /tmp/vapt/repro-test/poc-cache.db
+CWD: /tmp/vapt/repro-test/evil-repo
+RC: 0
+---
+Reading config from .signal
+2026-10-15 05:08:16 - INFO : no_scan : Logging at level INFO to /tmp/vapt/repro-test/scan.log
+2026-10-15 05:08:16 - INFO : no_scan : Signal version: 2026.9.0
+2026-10-15 05:08:16 - INFO : no_scan : Invoked with command line: /tmp/binary/signal-pyarmor-linux-x86_64 . --llm-mode byo --llm-key=******** --agent-limit 2 --result-limit 5 --log-file /tmp/vapt/repro-test/scan.log --error-log-file /tmp/vapt/repro-test/scan-errors.log --cache-file /tmp/vapt/repro-test/poc-cache.db
+2026-10-15 05:08:16 - INFO : no_scan : Error logging enabled: /tmp/vapt/repro-test/scan-errors.log
+2026-10-15 05:08:16 - WARNING : model_config : Model 'poc-fake-model' not found in MODEL_MAX_COMPLETION_TOKENS. Using default max tokens: 16384.
+2026-10-15 05:08:16 - INFO : llm_factory : LLM clients created — mode=byo
+2026-10-15 05:08:16 - INFO : llm_factory :   singlefilescan-agent: model=poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:16 - INFO : llm_factory :   dataflow-agent: model=poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:16 - INFO : llm_factory :   oversight-agent: model=poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:16 - INFO : llm_factory :   exploitation-agent: model=poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:16 - INFO : llm_factory :   sca-agent: model=poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:16 - INFO : llm_factory :   mergekey-embed-agent: model=poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:16 - INFO : llm_factory :   oversight-embed-agent: model=poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:16 - WARNING : model_config : Model 'poc-fake-model' not found in MODEL_MAX_COMPLETION_TOKENS. Using default max tokens: 16384.
+2026-10-15 05:08:16 - INFO : no_scan : Using max_completion_tokens=16384 for model 'poc-fake-model' (requested max: None)
+2026-10-15 05:08:16 - INFO : utils.llm : Successful connection to LLM endpoint for agent 'singlefilescan-agent' (model=poc-fake-model).
+2026-10-15 05:08:16 - INFO : utils.llm : Successful connection to LLM endpoint for agent 'dataflow-agent' (model=poc-fake-model).
+2026-10-15 05:08:17 - INFO : utils.llm : Successful connection to LLM endpoint for agent 'oversight-agent' (model=poc-fake-model).
+2026-10-15 05:08:17 - INFO : utils.llm : Successful connection to LLM endpoint for agent 'exploitation-agent' (model=poc-fake-model).
+2026-10-15 05:08:17 - INFO : utils.llm : Successful connection to LLM endpoint for agent 'sca-agent' (model=poc-fake-model).
+2026-10-15 05:08:17 - INFO : utils.llm : Successful connection to LLM endpoint for agent 'mergekey-embed-agent' (model=poc-fake-model).
+2026-10-15 05:08:17 - INFO : utils.llm : Successful connection to LLM endpoint for agent 'oversight-embed-agent' (model=poc-fake-model).
+2026-10-15 05:08:17 - INFO : scans.sast : singlefilescan-agent LLM: poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:17 - INFO : scans.sast : dataflow-agent LLM: poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:17 - INFO : scans.sast : oversight-agent LLM: poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:17 - INFO : scans.sast : exploitation-agent LLM: poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:17 - INFO : scans.sast : sca-agent LLM: poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:17 - INFO : scans.sast : mergekey-embed-agent LLM: poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:17 - INFO : scans.sast : oversight-embed-agent LLM: poc-fake-model at http://127.0.0.1:8899/v1
+2026-10-15 05:08:17 - INFO : scans.sast : ##########################################
+2026-10-15 05:08:17 - INFO : scans.sast : # SINGLE-FILE ANALYSIS
+2026-10-15 05:08:17 - INFO : scans.sast : ##########################################
+2026-10-15 05:08:17 - INFO : scans.sast : Identified 1 files for analysis
+2026-10-15 05:08:17 - INFO : scans.sast : File count (1) is at or below the large-codebase threshold (500); skipping pre-flight token/time estimate and proceeding directly to scan.
+2026-10-15 05:08:17 - INFO : scans.sast : --> Default analysis enabled
+2026-10-15 05:08:17 - INFO : scans.sast : --> Intra-file dataflow short-circuit enabled
+2026-10-15 05:08:17 - INFO : scans.sast : --> Crypto analysis enabled
+2026-10-15 05:08:17 - INFO : utils.llm : Analyzing 1 of 2 (50%)
+2026-10-15 05:08:17 - INFO : utils.llm : Analyzing 2 of 2 (100%)
+2026-10-15 05:08:17 - INFO : utils.llm : Successfully analyzed 0.0% of files
+2026-10-15 05:08:17 - INFO : utils.llm : Unable to analyze app.py, Code: ValidationError, Message: 1 validation error for ResultsModel
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='OK', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/json_invalid
+2026-10-15 05:08:17 - INFO : utils.llm : Unable to analyze app.py, Code: ValidationError, Message: 1 validation error for ResultsModel
+  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='OK', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/json_invalid
+2026-10-15 05:08:17 - INFO : scans.sast : Limiting results to top 5
+2026-10-15 05:08:17 - INFO : scans.sast : ##########################################
+2026-10-15 05:08:17 - INFO : scans.sast : # DATAFLOW AGENT
+2026-10-15 05:08:17 - INFO : scans.sast : ##########################################
+2026-10-15 05:08:17 - INFO : scans.sast : 0 dataflow tasks identified.
+2026-10-15 05:08:17 - INFO : agents.sast : Running 0 tasks...
+2026-10-15 05:08:17 - INFO : scans.sast : ##########################################
+2026-10-15 05:08:17 - INFO : scans.sast : # OVERSIGHT AGENT
+2026-10-15 05:08:17 - INFO : scans.sast : ##########################################
+2026-10-15 05:08:17 - INFO : scans.sast : Initializing embedding-based oversight review...
+2026-10-15 05:08:17 - ERROR : scans.sast : Failed to initialize embeddings: list index out of range
+2026-10-15 05:08:17 - ERROR : scans.sast : Falling back to traditional oversight review
+2026-10-15 05:08:17 - INFO : scans.sast : Performing additional triage for each result...
+2026-10-15 05:08:17 - INFO : agents.sast : Running 0 tasks...
+2026-10-15 05:08:17 - INFO : scans.sast : Reviewing content of each result...
+2026-10-15 05:08:17 - INFO : scans.sast : ##########################################
+2026-10-15 05:08:17 - INFO : scans.sast : # REPORTING
+2026-10-15 05:08:17 - INFO : scans.sast : ##########################################
+2026-10-15 05:08:17 - INFO : scans.sast : Generating SARIF report for 0 issues...
+2026-10-15 05:08:17 - INFO : scans.sast : Writing SARIF report to results.sarif

@@ -1,0 +1,27 @@
+CMD: /tmp/binary/signal-pyarmor-linux-x86_64 /tmp/vapt/repro-test/evil-repo --check-llm true
+CWD: /tmp/vapt/repro-test/clean-cwd
+RC: 0
+---
+Reading config from .signal
+
+                            LLM Endpoint Validation                             
+┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
+┃ Agent             ┃ Endpoint          ┃ Model             ┃ Status           ┃
+┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
+│ singlefilescan-a… │ https://llm.core… │ claude-sonnet-4-6 │ ⚠ SKIPPED (not   │
+│                   │                   │                   │ configured)      │
+│ dataflow-agent    │ https://llm.core… │ o3-mini           │ ⚠ SKIPPED (not   │
+│                   │                   │                   │ configured)      │
+│ oversight-agent   │ https://llm.core… │ o3-mini           │ ⚠ SKIPPED (not   │
+│                   │                   │                   │ configured)      │
+│ exploitation-age… │ https://llm.core… │ o3-mini           │ ⚠ SKIPPED (not   │
+│                   │                   │                   │ configured)      │
+│ sca-agent         │ https://llm.core… │ gpt-4o            │ ⚠ SKIPPED (not   │
+│                   │                   │                   │ configured)      │
+│ mergekey-embed-a… │ https://llm.core… │ text-embedding-3… │ ⚠ SKIPPED (not   │
+│                   │                   │                   │ configured)      │
+│ oversight-embed-… │ https://llm.core… │ text-embedding-3… │ ⚠ SKIPPED (not   │
+│                   │                   │                   │ configured)      │
+└───────────────────┴───────────────────┴───────────────────┴──────────────────┘
+
+All LLM endpoints validated successfully.
