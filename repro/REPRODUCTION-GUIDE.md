@@ -55,6 +55,30 @@ python3 repro/repro_signal_vapt.py --binary ./signal-pyarmor-linux-x86_64
 
 Copying the binary into the Linux filesystem (`~/sp`) rather than running it from `/mnt/d` avoids DrvFs permission quirks and is faster. With normal internet access inside WSL/Docker you do **not** need `--tiktoken-file` (the app fetches its encoding itself).
 
+### 0.2 Starting from a fresh clone (repo + binary)
+
+```bash
+# 1) prerequisites (gcc -> CHK-04, python3-venv -> SIG-02; both optional, PoCs skip gracefully)
+sudo apt update && sudo apt install -y git python3 python3-venv gcc
+
+# 2) clone the assessment branch
+git clone -b arena/cbb7a71b-vapt https://github.com/0x3xp10i73r/VAPT.git
+cd VAPT
+
+# 3) reassemble the target binary from the binary-drop branch (or copy in your own copy)
+git fetch origin +refs/heads/binary-drop:refs/remotes/origin/binary-drop
+git show refs/remotes/origin/binary-drop:signal-pyarmor-linux-x86_64.part-00 > signal-pyarmor-linux-x86_64.part-00
+git show refs/remotes/origin/binary-drop:signal-pyarmor-linux-x86_64.part-01 > signal-pyarmor-linux-x86_64.part-01
+cat signal-pyarmor-linux-x86_64.part-0? > signal-pyarmor-linux-x86_64
+rm signal-pyarmor-linux-x86_64.part-*
+chmod +x signal-pyarmor-linux-x86_64
+sha256sum signal-pyarmor-linux-x86_64   # expect 47b9fa7236a5be5ed37a9186d55a6a84b8d2ef65fd0ab9e2fa744b0641c7d915
+
+# 4) run everything
+python3 repro/run_all_pocs.py --binary ./signal-pyarmor-linux-x86_64
+cat poc-evidence/SUMMARY.md
+```
+
 ## 1. Automated reproduction (recommended)
 
 ```bash
