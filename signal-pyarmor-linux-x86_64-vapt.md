@@ -175,7 +175,7 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
 
   The tool description handed to the model reads: *"Execute a shell command in the workspace directory and return its output."* The packaged prompt `pockit/prompts/exploit_creator_prompt.prompt` directs the agent to run `docker cp <container_name>:/tmp/pwned ./evidence/pwned` — i.e. a **host** command, not a command inside the container.
 
-- **PoC.** **`poc/14-check-f01.py` is this finding in one command** — it checks the three links separately (which agents ask for `shell=True`; what `run_shell` calls; the tool executing a metacharacter payload on the host) and prints `F-01 reproduced: 3/3`. `poc/05-poc-f01-host-shell.py` imports the **shipped, unmodified** `pockit.agents.shared_tools` from the extraction, registers the workspace tools exactly as the product does (`shell=True`, `write=True`), obtains the `run_shell` closure and invokes it with a command containing shell metacharacters. Executed result:
+- **PoC.** **`poc/14-check-f01.py` is this finding in one command** — it checks the three links separately (which agents ask for `shell=True`; what `run_shell` calls; the tool executing a metacharacter payload on the host) and prints `F-01 reproduced: 3/3`. Both `poc/05` and `poc/14` drive the tool with the two commands a tester reaches for first — `whoami` and `cat /etc/passwd` — and `poc/14` additionally reads `/etc/passwd` and the current username itself and asserts the tool returned the same bytes. `poc/05-poc-f01-host-shell.py` imports the **shipped, unmodified** `pockit.agents.shared_tools` from the extraction, registers the workspace tools exactly as the product does (`shell=True`, `write=True`), obtains the `run_shell` closure and invokes it with a command containing shell metacharacters. Executed result:
 
   ```
   [*] registered tools: ['_safe', 'agent', 'call_count', 'file_search', 'list_directory',
@@ -183,11 +183,13 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
                          'workspace_dir', 'write', 'write_file']
   [*] run_shell closure: ('call_count', 'workspace_dir')
 
-      command = 'id; echo injected > /tmp/pockit-poc-escape-proof; cat /etc/hostname'
+      command = 'whoami; cat /etc/passwd; echo injected > /tmp/pockit-poc-escape-proof'
 
   ---- tool return value ----
-  uid=1001(user) gid=1001(user) groups=1001(user),27(sudo),100(users)
-  e2b.local
+  user
+  root:x:0:0:root:/root:/bin/bash
+  daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+  ... 22 more account lines ...
   ----------------------------
 
   [+] host file /tmp/pockit-poc-escape-proof created: True
@@ -1384,8 +1386,8 @@ Per-script invocation, required environment and expected output are in
 | `02-rebuild-cpython-host.c` | harness | Builds a CPython 3.13 launcher against the bundle's own `libpython3.13.so.1.0`; correct 4-argument `PyRun_SimpleFileExFlags` signature; propagates the command line into `sys.argv` |
 | `03-armored-module-survey.py` | F-03, F-14 | Imports all 62 protected modules with no licence; counts recoverable constants and identifiers |
 | `04-protected-metadata-dump.py` | F-03 | Writes the full string/identifier harvest with per-module provenance |
-| `05-poc-f01-host-shell.py` | F-01 | Executes the shipped `run_shell` tool; metacharacters interpreted, file written outside the workspace |
-| `14-check-f01.py` | F-01 | The whole F-01 chain in one command: which agents register the shell tool (from their bytecode), what `run_shell` calls, and the tool executing a metacharacter payload on the host - `F-01 reproduced: 3/3` |
+| `05-poc-f01-host-shell.py` | F-01 | Executes the shipped `run_shell` tool with `whoami; cat /etc/passwd` plus a redirect; file written outside the workspace |
+| `14-check-f01.py` | F-01 | The whole F-01 chain in one command: which agents register the shell tool (from their bytecode), what `run_shell` calls, and the tool running `whoami` + `cat /etc/passwd` on the host, both verified against the script's own reads - `F-01 reproduced: 3/3` |
 | `06-poc-f02-workspace.py` | F-02 | Path traversal via the GUID, symlink adoption under `exist_ok=True`, default mode `0o755` |
 | `07-poc-f06-tls-endpoint.py` | F-06 | Logging HTTPS endpoint with a self-signed certificate; captures the requests that verification-off lets through |
 | `08-collect-runtime-versions.py` | F-04, F-09, F-11, F-12 | Prints every security-relevant linked/loaded version from inside the reconstructed runtime |
@@ -1401,7 +1403,7 @@ Per-script invocation, required environment and expected output are in
 
 ---
 
-**Conclusion.** The artefact is well-engineered on the security basics — TLS verification is on by default, credentials are redacted from logs, the scan pipeline is fail-closed, file tools are path-confined, no live secrets are embedded, and the AI-framework dependency set is current against the recent LangChain/LangGraph disclosures. Its material risk is **capability, not defect**. PoCKit ships an autonomous agent holding a host shell with `shell=True` (F-01, proven by executing the shipped tool: `id` ran as the scanning user and a file was written outside the workspace) operating on a predictably named, unvalidated workspace that a local attacker or a crafted SARIF can redirect (F-02, proven with a planted symlink). The "isolated Docker container" framing in the help text describes where the *target* runs, not where the *commands* run. **That is the finding to act on before this feature leaves experimental status.**
+**Conclusion.** The artefact is well-engineered on the security basics — TLS verification is on by default, credentials are redacted from logs, the scan pipeline is fail-closed, file tools are path-confined, no live secrets are embedded, and the AI-framework dependency set is current against the recent LangChain/LangGraph disclosures. Its material risk is **capability, not defect**. PoCKit ships an autonomous agent holding a host shell with `shell=True` (F-01, proven by executing the shipped tool: `whoami` reported the scanning user, `cat /etc/passwd` returned the account file byte-for-byte, and a redirect was written outside the workspace) operating on a predictably named, unvalidated workspace that a local attacker or a crafted SARIF can redirect (F-02, proven with a planted symlink). The "isolated Docker container" framing in the help text describes where the *target* runs, not where the *commands* run. **That is the finding to act on before this feature leaves experimental status.**
 
 Two further data-flow issues sit alongside it. Enabling `--poc-kit` overrides the operator's per-agent BYO configuration: PoCKit reads its endpoint from the global `--llm-uri`, whose built-in default is the vendor gateway `https://llm.core.blackduck.com/`, resolves PoCKit's credential by a different rule from the other agents (a config-file key is not forwarded, so it demands `ANTHROPIC_API_KEY`), and treats Docker "isolation" as a `shutil.which("docker")` check — a three-line stub on `PATH` satisfied it (F-15). And every scanned file is sent to the LLM endpoint verbatim, line numbers and credential-like literals included, with no redaction and no statement in the output that code left the machine (F-16) — a design choice that is unremarkable in isolation but materially raises the cost of F-05, F-06 and F-15.
 

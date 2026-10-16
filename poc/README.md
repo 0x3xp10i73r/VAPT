@@ -242,22 +242,51 @@ Three links, checked separately; exit code 0 only if all three hold:
 
 == C. execution: the shipped tool, on this host ==
    registered tools: ['file_search', 'list_directory', 'read_file', 'run_shell', 'write_file']
-   payload  : pwd; echo metachar-proof; echo uid=$(id -u); printf 'A%s' 'B'; echo $((6*7)); echo POC > /tmp/pockit-f01-<pid>.proof
-   --- tool output ---
+   payload  : echo '=== whoami ==='; whoami; echo '=== pwd ==='; pwd; echo '=== cat /etc/passwd ===';
+              cat /etc/passwd; echo '=== shell metacharacters ==='; printf 'A%s' 'B'; echo $((6*7));
+              echo POC > /tmp/pockit-f01-<pid>.proof
+
+   --- tool output (what the agent receives) ---
+   | === whoami ===
+   | user
+   | === pwd ===
    | /tmp/pockit-f01-workspace
-   | metachar-proof
-   | uid=1000
+   | === cat /etc/passwd ===
+   | root:x:0:0:root:/root:/bin/bash
+   | daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+   | ... 23 more account lines ...
+   | === shell metacharacters ===
    | AB42
-   PASS cwd is the workspace / metacharacters interpreted / file written outside the workspace
+   --- end ---
+   PASS shell ran as this process's user (whoami == user)
+   PASS cat /etc/passwd returned the file: 25 lines, identical to what this script read
+   PASS metacharacters interpreted (printf format + $(()) arithmetic)
+   PASS working directory is the PoCKit workspace (pwd == /tmp/pockit-f01-workspace)
+   PASS file written outside the workspace
+   PASS redirect landed on /tmp, not inside the workspace
+   PASS written by this process's uid
+
+== summary ==
+   PASS wiring
+   PASS implementation
+   PASS execution
    F-01 reproduced: 3/3
 ```
 
-The `pwd; ...; $((6*7)); printf 'A%s' 'B'` payload is the point of check C: with
-`shell=False` it would be looked up as one executable named `pwd; echo ...` and
-fail, and `printf`'s `%s` would not be substituted. Instead the markers, the
-arithmetic and the format all evaluate, the working directory is the PoCKit
-workspace, and the redirect lands on `/tmp` - outside that workspace. The
-payload is harmless (it writes one marker file, which the script deletes).
+The payload is the classic pair a tester reaches for: `whoami`, then
+`cat /etc/passwd`. Both are read-only and harmless - `/etc/passwd` is
+world-readable and on a modern system carries no credential material (the
+hashes live in `/etc/shadow`, which nothing here touches). The script does not
+merely display the output: it reads `/etc/passwd` and the current username
+itself, without going through the shell, and asserts that the tool returned the
+same 25 lines and the same account name.
+
+The shell semantics are the rest of the proof. With `shell=False` the whole
+string would be looked up as one executable named `echo '=== whoami ==='; ...`
+and fail, and neither `printf`'s `%s` nor `$((6*7))` would be substituted.
+Instead `AB42` comes back, `pwd` reports the PoCKit workspace, and the redirect
+lands on `/tmp` - outside that workspace, as this process's own uid. The script
+deletes the marker file when it is done.
 
 It runs shipped product code, like `poc/05`; read both before running them.
 `poc/05` is the same execution check with more commentary, `poc/12` is the

