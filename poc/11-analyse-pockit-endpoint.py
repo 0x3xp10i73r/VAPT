@@ -13,9 +13,42 @@ import marshal
 import os
 import sys
 
-EX = (sys.argv[1] if len(sys.argv) > 1
-      else os.environ.get("SIGNAL_EXTRACT", "./signal-pyarmor-linux-x86_64_extracted"))
+
+def find_extract():
+    """Locate the extraction: argument, $SIGNAL_EXTRACT, cwd, repo root, assessment default."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    env = os.environ.get("SIGNAL_EXTRACT")
+    candidates = []
+    if env:
+        candidates.append(env)
+    candidates += [
+        os.path.join(os.getcwd(), "signal-pyarmor-linux-x86_64_extracted"),
+        os.path.join(os.path.dirname(here), "signal-pyarmor-linux-x86_64_extracted"),
+        "/tmp/vapt/signal-pyarmor-linux-x86_64_extracted",
+    ]
+    for cand in candidates:
+        if os.path.isdir(os.path.join(cand, "PYZ.pyz_extracted")):
+            if env and os.path.abspath(cand) != os.path.abspath(env):
+                sys.stderr.write("note: $SIGNAL_EXTRACT=%s is not an extraction; using %s\n"
+                                 % (env, cand))
+            return cand
+    return candidates[0] if candidates else "./signal-pyarmor-linux-x86_64_extracted"
+
+
+def no_extract_message(ex):
+    return (
+        "extraction directory not found: %s\n"
+        "\n"
+        "Run poc/00-setup.sh first (it creates it), or pass the directory\n"
+        "pyinstxtractor-ng produced, either as an argument or through the\n"
+        "SIGNAL_EXTRACT environment variable.\n"
+        % ex)
+
+EX = sys.argv[1] if len(sys.argv) > 1 else find_extract()
 POCKIT = os.path.join(EX, "PYZ.pyz_extracted", "pockit")
+
+if not os.path.isdir(POCKIT):
+    raise SystemExit(no_extract_message(EX))
 
 INTERESTING = ("POCKIT_LLM_BASE_URL", "ANTHROPIC_API_KEY", "llm.labs.blackduck",
                "llm.core.blackduck", "claude-opus", "claude-sonnet", "pockit-",

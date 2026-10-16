@@ -312,9 +312,12 @@ alias py3='env -u PYTHONHOME -u PYTHONPATH python3'
 | 11 | `py3 $POC/11-analyse-pockit-endpoint.py` | F-15 | `POCKIT_LLM_BASE_URL`, `https://llm.labs.blackduck.com`, `ANTHROPIC_API_KEY` |
 | 12 | `py3 $POC/12-disassemble-pyc.py pockit/agents/shared_tools.pyc run_shell` | F-01 | the `run_shell` docstring, `120`, and `('shell', 'capture_output', 'text', 'timeout', 'cwd')` |
 
-`poc/11` resolves the extraction from `$SIGNAL_EXTRACT` (or
-`./signal-pyarmor-linux-x86_64_extracted`); `poc/12` resolves its argument under
-`$SIGNAL_EXTRACT/PYZ.pyz_extracted/`, so the line above works verbatim.
+`poc/11` and `poc/12` locate the extraction the same way `poc/01` does —
+`$SIGNAL_EXTRACT`, the current directory, the repository root, then the
+assessment's path — so the lines above work from any directory, with or without
+the exports. `poc/12` resolves a relative argument under
+`<extraction>/PYZ.pyz_extracted/`, and says which directory it used when it
+cannot find the file.
 
 ### Dynamic — imports the shipped product code
 
