@@ -39,3 +39,4 @@ signal-cache.db
 signal_errors.json
 pockit-workspace/
 pockit_errors.jsonl
+__pycache__/
