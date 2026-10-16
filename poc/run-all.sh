@@ -315,11 +315,12 @@ cleanup
 echo " 6. F-16 — what a scan sends to the LLM"
 echo "=============================================================="
 # A plain scan (no --import-results) runs the single-file analysis stage, which
-# puts each file's text in the prompt. The target sits in its own directory
-# because file discovery honours .gitignore, and $WORK/poc-target is ignored in
-# a checkout of this repository.
-mkdir -p "$WORK/poc-triage"
-cat > "$WORK/poc-triage/hello.py" <<'EOF'
+# puts each file's text in the prompt. The target is created OUTSIDE the
+# checkout on purpose: file discovery honours .gitignore, so a scratch directory
+# inside $WORK is either listed in .gitignore (and then skipped - the finding in
+# the note below) or it turns up in git status. $TMPDIR keeps both from applying.
+TRIAGE="$(mktemp -d "${TMPDIR:-/tmp}/poc-triage.XXXXXX")"
+cat > "$TRIAGE/hello.py" <<'EOF'
 import subprocess
 
 def run(cmd): return subprocess.check_output(cmd, shell=True)
@@ -327,17 +328,23 @@ def run(cmd): return subprocess.check_output(cmd, shell=True)
 API_KEY = "AKIAIOSFODNN7EXAMPLE"
 DB_PASSWORD = "sup3r-s3cret-db-pass"
 EOF
+if git -C "$WORK" rev-parse --git-dir >/dev/null 2>&1 && git -C "$WORK" check-ignore -q "$TRIAGE"; then
+    echo "  (warning: $TRIAGE is git-ignored, so the scan will skip it)" >&2
+fi
 : > "$WORK/poc-f16-capture.log"
 listen f16 "$PORT_LLM" python3 "$POC/13-capture-llm-payload.py" "$PORT_LLM" "$WORK/poc-f16-capture.log" || true
-SCAN_TARGET=./poc-triage scan f16 -- --llm-mode byo --llm-uri "http://127.0.0.1:$PORT_LLM/v1" --llm-key CANARY_KEY_123 >/dev/null
+SCAN_TARGET="$TRIAGE" scan f16 -- --llm-mode byo --llm-uri "http://127.0.0.1:$PORT_LLM/v1" --llm-key CANARY_KEY_123 >/dev/null
 hits=$(grep -c AKIAIOSFODNN7EXAMPLE "$WORK/poc-f16-capture.log" 2>/dev/null); hits=${hits:-0}
 bodies=$(grep -c 'BODY (' "$WORK/poc-f16-capture.log" 2>/dev/null); bodies=${bodies:-0}
 found=$(grep -o "Identified [0-9]* files for analysis" "$WORK/poc-f16.out" 2>/dev/null | tail -1)
 if [ "$hits" -gt 0 ] 2>/dev/null; then
     result ok "F-16" "the planted credential literal appears in ${hits} of ${bodies} captured prompts (${found:-file count not logged}) — no redaction"
+elif [ -z "$found" ] || [ "$found" = "Identified 0 files for analysis" ]; then
+    result FAIL "F-16" "the scan never read the target (${found:-no file count logged}) — file discovery skipped $TRIAGE; see $WORK/poc-f16.out"
 else
-    result FAIL "F-16" "the literal did not appear — see $WORK/poc-f16-capture.log"
+    result FAIL "F-16" "the scan read the target (${found}) but sent no literal — see $WORK/poc-f16-capture.log"
 fi
+rm -rf "$TRIAGE"
 
 # Same scanner, same kind of file, but in a directory git ignores.
 if git -C "$WORK" rev-parse --git-dir >/dev/null 2>&1; then
@@ -385,6 +392,7 @@ echo
 echo "=============================================================="
 echo " summary"
 echo "=============================================================="
+summary; rc=$?
 cat <<EOF
 
   Raw output for every phase is under $WORK:
@@ -398,4 +406,4 @@ cat <<EOF
   vendor-side behaviour. Those need a real model, a real Docker daemon and
   written authorisation respectively.
 EOF
-summary && exit 0 || exit 1
+[ "$rc" -eq 0 ] && exit 0 || exit 1

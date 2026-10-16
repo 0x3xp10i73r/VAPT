@@ -535,13 +535,15 @@ that reason.
 
 ```bash
 cd "$WORK"
-mkdir -p poc-triage && printf 'API_KEY = "AKIAIOSFODNN7EXAMPLE"\nDB_PASSWORD = "sup3r-s3cret-db-pass"\n' \
-  > poc-triage/secret_sample.py
+# the target must not sit inside a checkout that ignores it - see the caveat below
+TRIAGE=$(mktemp -d)/poc-triage && mkdir -p "$TRIAGE"
+printf 'API_KEY = "AKIAIOSFODNN7EXAMPLE"\nDB_PASSWORD = "sup3r-s3cret-db-pass"\n' \
+  > "$TRIAGE/secret_sample.py"
 
 python3 $POC/13-capture-llm-payload.py 8899 "$WORK/poc-f16-payload.log"   # second shell
 
 HOME=$WORK/home TIKTOKEN_CACHE_DIR="$WORK/tkcache/cached" \
-  ./signal-pyarmor-linux-x86_64 ./poc-triage --config ./poc-byo.signal \
+  ./signal-pyarmor-linux-x86_64 "$TRIAGE" --config ./poc-byo.signal \
   --llm-mode byo --llm-uri http://127.0.0.1:8899/v1 --llm-key CANARY_KEY_123 \
   --caching false                  # exit 0; "Identified 1 files for analysis"
 
@@ -576,10 +578,13 @@ HOME=$WORK/home TIKTOKEN_CACHE_DIR="$WORK/tkcache/cached" \
 # INFO   : scans.sast : Identified 0 files for analysis
 ```
 
-So a `poc-target/` you created by hand inside this repository is skipped, while
-`poc-triage/` next to it is not. The runner demonstrates both cases, and it is
-why the runner's own scratch directories are named `poc-triage/` (scanned) and
-`poc-target/` (deliberately ignored).
+So a `poc-target/` you create by hand inside this repository is skipped — this
+is why the runner keeps its scan target under `$TMPDIR`, outside the checkout
+altogether (`mktemp -d`), and why its deliberately-ignored `poc-target/` exists
+only for the second half of this check. If the directory you point a scan at
+lives in a checkout that ignores it, the scan reports `Identified 0 files for
+analysis` and sends nothing at all — a silent coverage gap, and the reason this
+check can otherwise fail with no visible cause.
 
 The opposite asymmetry is worth checking too: the tool's **own** credential is
 redacted in its log (`--llm-key=********`), while the credential literals inside

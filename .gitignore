@@ -12,8 +12,12 @@ merged/
 py313host
 pyhome/
 
-# Produced by individual PoCs
+# Produced by individual PoCs. poc-target/ is deliberately ignored: the F-16
+# stage uses it to show the scanner reporting an ignored directory as
+# 'Identified 0 files for analysis'. A scan target that must be READ has to
+# live outside a checkout (poc/run-all.sh creates its own under $TMPDIR).
 poc-target/
+analysis/
 poc-f06-selfsigned.key
 poc-f06-selfsigned.pem
 poc-f06-requests.log
@@ -25,7 +29,6 @@ poc-byo.signal
 poc-cfgkey.signal
 poc-tls.signal
 poc-home/
-poc-triage/
 poc-fakebin/
 poc-nodocker-bin/
 poc-*.out
