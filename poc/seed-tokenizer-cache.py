@@ -107,7 +107,8 @@ def main():
         status = "seeded" if digest == SHA256 else "wrong"
 
     print("\nstatus: %s" % status)
-    if status == "ok":
+    if status in ("ok", "seeded"):
+        # Both are success: the file is present and its digest matched.
         print("export TIKTOKEN_CACHE_DIR=%s" % cache_dir)
         return 0
     if status == "wrong":

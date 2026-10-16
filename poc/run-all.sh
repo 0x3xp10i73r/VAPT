@@ -128,13 +128,28 @@ echo
 echo "=============================================================="
 echo " 3. tokenizer cache (every scan needs it before its first call)"
 echo "=============================================================="
-if "$HOST" "$POC/seed-tokenizer-cache.py" >"$WORK/poc-seed.out" 2>&1; then
-    export TIKTOKEN_CACHE_DIR="$WORK/tkcache/cached"
-    grep -E '^(cache|status|export)' "$WORK/poc-seed.out" | sed 's/^/  /'
-    result ok "F-05" "tokenizer cache ready at $TIKTOKEN_CACHE_DIR"
+CACHEDIR="$WORK/tkcache/cached"
+env -u TIKTOKEN_CACHE_DIR "$HOST" "$POC/seed-tokenizer-cache.py" "$CACHEDIR" >"$WORK/poc-seed.out" 2>&1
+seed_rc=$?
+sed 's/^/  /' "$WORK/poc-seed.out" | tail -14
+# Success is decided by the cache file itself: a seeder that fetched the blob and
+# verified it has succeeded, whatever its exit code says about that.
+CACHEFILE=$(ls -1 "$CACHEDIR"/* 2>/dev/null | head -1)
+if [ -n "$CACHEFILE" ] && [ -s "$CACHEFILE" ]; then
+    export TIKTOKEN_CACHE_DIR="$CACHEDIR"
+    note=""
+    if command -v sha256sum >/dev/null 2>&1; then
+        full=$(sha256sum "$CACHEFILE" | cut -d" " -f1)
+        short=$(printf '%s' "$full" | cut -c1-12)
+        if [ "$full" = "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7" ]; then
+            note=" (sha256 ${short}... matches the pinned digest)"
+        else
+            note=" (sha256 ${short}... UNEXPECTED, tiktoken will reject it)"
+        fi
+    fi
+    result ok "F-05" "tokenizer cache ready at $TIKTOKEN_CACHE_DIR${note}"
 else
-    sed 's/^/  /' "$WORK/poc-seed.out" | tail -12
-    result FAIL "F-05" "no tokenizer cache — the dynamic phases cannot run (this IS F-05)"
+    result FAIL "F-05" "no tokenizer cache - the dynamic phases cannot run (this IS F-05; seeder exit $seed_rc)"
     for f in F-15 F-16 F-06; do result skip "$f" "needs the tokenizer cache"; done
     printf '\n  reproduced: %d   failed: %d   skipped: %d\n' "$pass" "$fail" "$skip"
     exit 1

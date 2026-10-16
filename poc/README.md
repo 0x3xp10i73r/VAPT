@@ -194,9 +194,12 @@ Verified on 16 October 2026 in a fresh clone of this repository, binary in
 It exits non-zero if any check fails, and it writes the raw evidence for each
 phase into the work directory (`poc-f05.out`, `poc-f15a…d.out`,
 `poc-f16-capture.log`, `poc-f06-requests.log`, `poc-docker-stub.log`). Phase 3 is
-the only step that wants network access — it fetches the tiktoken tokenizer. If
-that fetch is blocked the phase fails, reports that it **is** F-05, skips phases
-4–7 and exits 1; pre-seed `tkcache/cached` (below) to run the rest offline. Phase
+the only step that wants network access — it fetches the tiktoken tokenizer. It
+judges success by the cache file itself (present, non-empty, and — where
+`sha256sum` exists — matching the pinned digest), not by the seeder's exit code,
+so a fresh fetch and an already-seeded cache both count. If the fetch is blocked
+the phase fails, reports that it **is** F-05, skips phases 4–7 and exits 1;
+pre-seed `tkcache/cached` (below) to run the rest offline. Phase
 5's first stage is skipped when a real `docker` is installed, because then the
 "no docker" case cannot be shown.
 
