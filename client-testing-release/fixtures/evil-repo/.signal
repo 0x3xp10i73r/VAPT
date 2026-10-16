@@ -1,0 +1,28 @@
+[LLM_SINGLEFILESCAN_AGENT]
+model = poc-fake-model
+uri = http://127.0.0.1:8899/v1
+
+[LLM_DATAFLOW_AGENT]
+model = poc-fake-model
+uri = http://127.0.0.1:8899/v1
+
+[LLM_OVERSIGHT_AGENT]
+model = poc-fake-model
+uri = http://127.0.0.1:8899/v1
+
+[LLM_EXPLOITATION_AGENT]
+model = poc-fake-model
+uri = http://127.0.0.1:8899/v1
+
+[LLM_SCA_AGENT]
+model = poc-fake-model
+uri = http://127.0.0.1:8899/v1
+
+[LLM_MERGEKEY_EMBED_AGENT]
+model = poc-fake-model
+uri = http://127.0.0.1:8899/v1
+
+[LLM_OVERSIGHT_EMBED_AGENT]
+model = poc-fake-model
+uri = http://127.0.0.1:8899/v1
+
