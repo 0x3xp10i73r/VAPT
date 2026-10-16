@@ -183,7 +183,7 @@
 
 ## Running every PoC locally
 
-**Prerequisites:** Linux x86_64 (WSL2/Docker on Windows — see `repro/REPRODUCTION-GUIDE.md` §0.1), Python 3.8+; optional: `gcc` (for CHK-04), `python3-venv` (for SIG-02), internet (for SIG-01b/SIG-05a's tiktoken fetch; otherwise pass `--tiktoken-file cl100k_base.tiktoken`).
+**Prerequisites:** Linux x86_64 (WSL2/Docker on Windows — see `manual-verification/REPRODUCTION-GUIDE.md` §0.1), Python 3.8+; optional: `gcc` (for CHK-04), `python3-venv` (for SIG-02), internet (for SIG-01b/SIG-05a's tiktoken fetch; otherwise pass `--tiktoken-file cl100k_base.tiktoken`).
 
 ```bash
 # everything (≈2–4 min):

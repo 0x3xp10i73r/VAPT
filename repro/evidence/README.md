@@ -1,6 +1,6 @@
 # Evidence — PoC reproduction of Black Duck Signal 2026.9.0 findings
 
-Artifacts below were captured by `repro_signal_vapt.py` (see `../REPRODUCTION-GUIDE.md`).
+Artifacts below were captured by `repro_signal_vapt.py` (see `../../manual-verification/REPRODUCTION-GUIDE.md`).
 Reproduced **twice, independently**:
 
 1. **Assessment sandbox** (egress-restricted Linux): SIG-01a 5/5 key-bearing requests; SIG-01b 10/18 bodies carried the source canary. (Files below are from this run.)

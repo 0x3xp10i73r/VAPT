@@ -24,7 +24,8 @@ import argparse
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, "..", "repro"))   # run_all_pocs.py lives there
 import run_all_pocs as R  # noqa: E402  (module import is side-effect free)
 from http.server import ThreadingHTTPServer  # noqa: E402
 
