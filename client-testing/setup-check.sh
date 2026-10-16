@@ -52,11 +52,13 @@ else
   bad "python3 is required (apt install python3)"
 fi
 
-if python3 -c "import venv" >/dev/null 2>&1; then
-  ok "python3 venv module (SIG-02 bundle extraction)"
+VTEST="$(mktemp -d)"
+if python3 -m venv "$VTEST/v" >/dev/null 2>&1; then
+  ok "python3 venv creation (SIG-02 bundle extraction)"
 else
-  note "python3 venv module missing (apt install python3-venv) — SIG-02 will be skipped"
+  note "python3 -m venv fails (apt install python3-venv) — SIG-02 will be skipped"
 fi
+rm -rf "$VTEST"
 
 if command -v gcc >/dev/null 2>&1; then
   ok "gcc: $(gcc --version 2>/dev/null | head -1) (CHK-04 LD_PRELOAD)"
