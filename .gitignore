@@ -1,0 +1,21 @@
+# Analysis artefacts are never committed: the binary lives on the binary-drop
+# branch and in the v1.0 release, and everything else here is derived from it.
+signal-pyarmor-linux-x86_64
+signal-pyarmor-linux-x86_64.part-00
+signal-pyarmor-linux-x86_64.part-01
+part-00
+part-01
+
+# Produced by poc/00-setup.sh
+signal-pyarmor-linux-x86_64_extracted/
+merged/
+py313host
+pyhome/
+
+# Produced by individual PoCs
+poc-target/
+poc-f06-selfsigned.key
+poc-f06-selfsigned.pem
+poc-f06-requests.log
+tkcache/
+*.log
