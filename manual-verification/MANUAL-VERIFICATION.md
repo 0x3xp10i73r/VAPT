@@ -20,6 +20,10 @@ cp ~/VAPT/signal-pyarmor-linux-x86_64 . && chmod +x signal-pyarmor-linux-x86_64
 # if you don't have the binary yet, see REPRODUCTION-GUIDE.md §0.2 (binary-drop branch)
 # shortcut: a ready-made copy of this repo fixture is in fixtures/evil-repo/
 #           (the point of manual verification is building it by hand, though)
+# NOTE: if your workdir is INSIDE a git repository, git-init the fixture after building it
+#       (cd evil-repo && git init && git add -A && git commit -m fixture) — the target's
+#       file discovery respects an enclosing git repo and may otherwise skip the files.
+#       The automated runner (run_all_pocs.py) does this automatically.
 
 export B=~/vapt-manual/signal-pyarmor-linux-x86_64
 sha256sum $B      # expect 47b9fa7236a5be5ed37a9186d55a6a84b8d2ef65fd0ab9e2fa744b0641c7d915

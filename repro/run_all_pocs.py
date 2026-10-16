@@ -175,6 +175,17 @@ def make_evil_repo():
     with open(os.path.join(tgt, ".signal"), "w") as f:
         for a in AGENTS:
             f.write("[%s]\nmodel = %s\nuri = %s\n\n" % (a, CHAT_MODEL, uri))
+    # Make the fixture its own git repository (like a genuinely cloned attacker repo).
+    # Rationale: the target's file discovery respects an ENCLOSING git repository —
+    # if the workdir sits inside one (e.g. this kit run from inside the cloned VAPT
+    # repo), untracked/ignored fixture files are skipped ("No files found for
+    # analysis") and SIG-01b cannot reproduce. A committed mini-repo is immune and
+    # also matches the real-world attack scenario (victim clones the attacker's repo).
+    if shutil.which("git"):
+        subprocess.run(["git", "init", "-q"], cwd=tgt, capture_output=True)
+        subprocess.run(["git", "add", "-A"], cwd=tgt, capture_output=True)
+        subprocess.run(["git", "-c", "user.email=poc@local", "-c", "user.name=poc",
+                        "commit", "-qm", "PoC fixture"], cwd=tgt, capture_output=True)
     return tgt
 
 

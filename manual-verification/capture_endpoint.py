@@ -25,7 +25,10 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "repro"))   # run_all_pocs.py lives there
+for _cand in (HERE, os.path.join(HERE, "..", "repro")):   # works in manual-verification/, client-testing/ or repro/
+    if os.path.exists(os.path.join(_cand, "run_all_pocs.py")):
+        sys.path.insert(0, _cand)
+        break
 import run_all_pocs as R  # noqa: E402  (module import is side-effect free)
 from http.server import ThreadingHTTPServer  # noqa: E402
 
