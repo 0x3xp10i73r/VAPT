@@ -1027,14 +1027,30 @@ The release is distributed with a SHA-256 in the release metadata and no signatu
 - **PoC.** `poc/13-capture-llm-payload.py` (a logging OpenAI-compatible endpoint) receives the scan's requests; the request bodies are inspected for literals from the target.
 
   ```
+  $ printf 'API_KEY = "AKIAIOSFODNN7EXAMPLE"\nDB_PASSWORD = "sup3r-s3cret-db-pass"\n' > <target>/secret_sample.py
+
   $ python3 poc/13-capture-llm-payload.py 8899 /tmp/poc-f16-payload.log &
-  $ HOME=... TIKTOKEN_CACHE_DIR=<seeded> ./signal-pyarmor-linux-x86_64 <target>         --llm-mode byo --llm-uri http://127.0.0.1:8899/v1 --llm-key CANARY_KEY_123
-  $ python3 - <<'EOF'
-  import json,glob
-  ... count requests containing the planted literal ...
-  EOF
-  requests carrying the planted credential-like literals: 10
+  capturing LLM payloads on :8899 -> /tmp/poc-f16-payload.log
+
+  $ HOME=<sandbox> TIKTOKEN_CACHE_DIR=<seeded-cache> ./signal-pyarmor-linux-x86_64 <target> \
+        --llm-mode byo --llm-uri http://127.0.0.1:8899/v1 --llm-key CANARY_KEY_123   # exit 0
+
+  $ grep -c AKIAIOSFODNN7EXAMPLE /tmp/poc-f16-payload.log
+  10
+  $ grep -c 'BODY (' /tmp/poc-f16-payload.log        # every captured request
+  129
+  $ grep -c 'Authorization: <redacted>' /tmp/poc-f16-payload.log
+  129
+
+  $ grep -A3 'content of the file you are to analyze' /tmp/poc-f16-payload.log | head -6
+  The content of the file you are to analyze is as follows:
   ```
+  1: API_KEY = "AKIAIOSFODNN7EXAMPLE"
+  2: DB_PASSWORD = "sup3r-s3cret-db-pass"
+  ```
+  ```
+
+  Run against the capture from this assessment: **10 of 129** requests carried the planted credential-like literals, and every request carried an `Authorization: Bearer` header (redacted by the capture script itself, which is deliberate — the point of this PoC is the *prompt* content, not the header).
 
 - **Steps to reproduce manually.**
   1. Create a target directory containing a file whose only content is `API_KEY = "AKIAIOSFODNN7EXAMPLE"`.
