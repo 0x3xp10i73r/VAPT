@@ -200,8 +200,10 @@ judges success by the cache file itself (present, non-empty, and — where
 so a fresh fetch and an already-seeded cache both count. If the fetch is blocked
 the phase fails, reports that it **is** F-05, skips phases 4–7 and exits 1;
 pre-seed `tkcache/cached` (below) to run the rest offline. Phase
-5's first stage is skipped when a real `docker` is installed, because then the
-"no docker" case cannot be shown.
+5 first runs with the host's own `PATH`, and where that `PATH` contains a
+`docker`, it re-runs the stage against a mirror of your `PATH` with every docker
+entry removed — the gate is a lookup, so the refusal is demonstrable either way
+and the stage only skips if even that does not reproduce it.
 
 ## 1. Obtain the target and verify it
 

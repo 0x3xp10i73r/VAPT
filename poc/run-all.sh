@@ -42,6 +42,24 @@ result() {                     # result <ok|FAIL|skip> <finding> <text>
         *)    fail=$((fail+1)); printf '  FAIL  %-7s %s\n' "$2" "$3" ;;
     esac
 }
+nodocker_path() {              # mirror $PATH into a directory without docker
+    local out="$WORK/poc-nodocker-bin" p e b saved="$IFS"
+    rm -rf "$out"; mkdir -p "$out"
+    IFS=:
+    for p in $PATH; do
+        [ -d "$p" ] || continue
+        for e in "$p"/*; do
+            [ -e "$e" ] || continue
+            b="${e##*/}"
+            case "$b" in docker|docker-*) continue ;; esac
+            [ -e "$out/$b" ] || ln -s "$e" "$out/$b" 2>/dev/null
+        done
+    done
+    IFS="$saved"
+    printf '%s' "$out"
+}
+
+
 fingerprint() {                # fingerprint <string> -> first 12 hex of its sha256
     if command -v sha256sum >/dev/null 2>&1; then
         printf '%s' "$1" | sha256sum | cut -c1-12
@@ -225,7 +243,14 @@ export DOCKER_STUB_LOG="$WORK/poc-docker-stub.log"
 PK=( --import-results "$POC/fixtures/pockit-finding.json" --poc-kit true --dataflow true --synthesis true --agent-limit 1 )
 
 if command -v docker >/dev/null 2>&1; then
-    result skip "F-15" "a real docker is installed here, so the 'no docker' case cannot be shown"
+    # docker is installed here, but the gate is a PATH lookup, so give the scan a
+    # PATH that mirrors this one with every docker entry removed and watch it refuse.
+    scan f15a "PATH=$(nodocker_path)" -- "${PK[@]}" --llm-key CANARY_KEY_123 >/dev/null
+    if grep -q "PoCKit requires Docker but the 'docker' binary was not found" "$WORK/poc-f15a.out"; then
+        result ok "F-15" "docker is on PATH here, yet with a PATH that omits it the hand-off refuses outright — the gate is a lookup, not a capability check"
+    else
+        result skip "F-15" "docker is on PATH here and the docker-free PATH did not reproduce the refusal — see $WORK/poc-f15a.out"
+    fi
 else
     scan f15a -- "${PK[@]}" --llm-key CANARY_KEY_123 >/dev/null
     if grep -q "PoCKit requires Docker but the 'docker' binary was not found" "$WORK/poc-f15a.out"; then
