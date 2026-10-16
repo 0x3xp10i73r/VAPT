@@ -19,7 +19,7 @@ while [ $# -gt 0 ]; do
         --work) WORK="${2:?--work needs a directory}"; shift 2 ;;
         --binary) BINARY="${2:?--binary needs a path}"; shift 2 ;;
         --skip-dynamic) SKIP_DYNAMIC=1; shift ;;
-        -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown argument: $1 (try --help)" >&2; exit 2 ;;
     esac
 done
