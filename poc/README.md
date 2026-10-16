@@ -138,6 +138,29 @@ It is idempotent — it skips an extraction that exists, re-checks the hash, and
 re-runs the smoke test at the end. The rest of this section shows what it does,
 so you can run or repair the steps individually.
 
+Once that has succeeded, the whole offline suite is one command:
+
+```bash
+bash poc/run-static.sh            # --work <dir> if the extraction is elsewhere
+```
+
+```
+  ok   03-armored-module-survey   F-03 F-14    imported successfully     : 62
+  ok   04-protected-metadata      F-03         total harvested entries: 14344
+  ok   05-poc-f01-host-shell      F-01         [+] host file /tmp/pockit-poc-escape-proof created: True
+  ok   06-poc-f02-workspace       F-02         type=dir mode=0o755 …
+  ok   08-runtime-versions        F-04 F-09    ssl           : OpenSSL 3.0.16 11 Feb 2025
+  ok   09-advisory-ranges         F-11 F-12    bundled components inside a published affected range: 6
+  ok   10-introspect-module       F-03         classes    : 22
+  ok   11-pockit-endpoint         F-15         … https://llm.labs.blackduck.com …
+  ok   12-disassemble-pyc         F-01 F-02    ### shared_tools.pyc.run_shell
+```
+
+It sets up its own environment, so it needs none of the exports from step 6, and
+it exits non-zero if any PoC fails. The four findings that need the real binary
+and a listening endpoint (F-05, F-06, F-15, F-16) are listed at the end of its
+output and covered below.
+
 ## 1. Obtain the target and verify it
 
 The binary is stored in this repository as two parts on the `binary-drop` branch
