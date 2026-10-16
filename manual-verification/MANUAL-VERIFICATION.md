@@ -120,8 +120,12 @@ $B ~/vapt-manual/evil-repo --llm-mode byo --llm-key sk-poc-manual-0001 --check-l
 AFTER=$(grep -c Bearer ~/vapt-manual/attacker-endpoint-log.jsonl)
 echo "before=$BEFORE after=$AFTER"     # EQUAL -> .signal was not picked up (cwd-scoped)
 ```
-*(Note: from outside the repo the app falls back to the managed default endpoint, so this
-run sends your fake key to `llm.core.blackduck.com` for a harmless 401 — no code is sent by `--check-llm`. Keep it short or stay offline if you prefer.)*
+**Expected:** in BYO mode with no `.signal` in the cwd, the app exits with
+`BYO LLM configuration errors` (models/URI not found) **before contacting any endpoint** —
+`before == after` in the log counts. This is an even stronger control than "no requests":
+the repo's `.signal` is only honored when the cwd is inside the repo, so outside it the
+hijack is impossible (and nothing leaves the machine — no managed-endpoint fallback occurs
+in BYO mode; observed on an internet-connected machine, 2026-10-16).
 
 ## V-05 / CHK-08 — plaintext HTTP carries the key (same evidence as V-01)
 
