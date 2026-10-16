@@ -1136,7 +1136,7 @@ Recorded so that the assessment is balanced and so these are not regressed:
 | PyInstaller — CVE-2025-59042 (LPE via `sys.path` injection) | 6.x+ | 6.0.0 / 6.10.0 | **Not affected** — requires < 6.0.0 |
 | PyArmor — no known direct vulnerabilities | 9.2.2 | n/a | F-14 (signature/interop only) |
 
-**Note on SBOM completeness.** Two declared dependencies carry no usable version record: `langgraph` ships no `dist-info` (the metadata requires `langgraph>=1.1.10,<2.0` and the CVE check relies on that declared floor), and `setuptools` reports `0.dev0+unknown`. A vendor-produced SBOM would close this gap. The accompanying `sbom-signal-2026.9.0.csv` in this repository lists 55 components with provenance.
+**Note on SBOM completeness.** Two declared dependencies carry no usable version record: `langgraph` ships no `dist-info` (the metadata requires `langgraph>=1.1.10,<2.0` and the CVE check relies on that declared floor), and `setuptools` reports `0.dev0+unknown`. A vendor-produced SBOM would close this gap. The accompanying `sbom-signal-2026.9.0.csv` in this repository lists **56 components** with provenance (`component,version,type,in_bundle_evidence,security_note`); the `security_note` column carries the per-component verdict reached in this section, and every row states how the version or the presence of the component was established.
 
 ---
 
