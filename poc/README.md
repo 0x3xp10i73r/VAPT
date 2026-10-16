@@ -8,12 +8,43 @@ clean directory while writing this file. `$WORK` is a scratch directory of your
 choosing (`/tmp/vapt` was used for the assessment); nothing is hard-coded to it
 except the default paths noted in the table in step 6.
 
+## Quick start
+
+Everything in steps 1–5 is automated. With the binary at hand:
+
+```bash
+bash poc/00-setup.sh --binary ~/Downloads/signal-pyarmor-linux-x86_64
+```
+
+It verifies the SHA-256, extracts the archive, removes the namespace markers,
+builds the merged tree and the CPython host, runs the smoke test, and prints the
+exact environment exports for the rest of the session. Re-running it is safe.
+Then the static PoCs are one command each, e.g.
+
+```bash
+./py313host poc/03-armored-module-survey.py     # 62/62 protected modules, no licence
+```
+
+The rest of this file explains each step, so you can run them by hand — or fix
+one that failed.
+
+---
+
 There are **two kinds of script** and they need different interpreters:
 
 | Kind | Interpreter | Why |
 |---|---|---|
-| Reads the extracted artefact only | your system `python3` | `poc/11`, `12`, `13`, `07`, `01` |
+| Reads the extracted artefact only | your system `python3` (3.13 ideal) | `poc/11`, `12`, `13`, `07`, `01` |
 | Imports the frozen 3.13 modules | `./py313host` (built in step 5) | the frozen `.pyc` files are CPython 3.13 bytecode and must run on the `libpython3.13` shipped inside the binary |
+
+`py313host` propagates its command line into the script's `sys.argv`, so every
+script — including the argument-taking ones — can also be run through it. That
+makes `./py313host` a universal fallback if your system Python is newer than the
+3.13 the payload was built with:
+
+```bash
+./py313host poc/12-disassemble-pyc.py pockit/agents/shared_tools.pyc run_shell
+```
 
 ---
 
@@ -46,7 +77,16 @@ sudo apt-get update && sudo apt-get install -y python3 python3-venv gcc libc6-de
 mkdir -p ~/vapt && cd ~/vapt     # clone the repo here too, or copy poc/ in
 ```
 
-Then follow this document from step 1. Nothing else changes.
+Then follow this document from step 1. Nothing else changes. If your distribution
+ships **Python 3.14** (Kali rolling does as of late 2026) nothing breaks — the
+extractor runs fine on it — but two scripts were only tested on 3.11/3.13. If
+`poc/11` or `poc/12` raises `ValueError: bad marshal data`, run them through the
+host instead, which is always the payload's own 3.13:
+
+```bash
+./py313host poc/11-analyse-pockit-endpoint.py        # needs the step 5 exports
+./py313host poc/12-disassemble-pyc.py pockit/agents/shared_tools.pyc run_shell
+```
 
 **If you must stay on Windows**, the useful subset is steps 2–3 plus the two
 scripts that only read files — `poc/11` (PoCKit's endpoint and credential
@@ -64,10 +104,12 @@ or the merged tree for them. Skip steps 4–5 entirely.
 
 Two Windows-specific notes for step 3 and `poc/01`:
 
-* On Windows the paths inside this project's defaults (`/tmp/vapt/…`) are
-  **not** temporary directories — an absolute POSIX path becomes `\tmp\vapt\…`
-  on the current drive. Always set `MERGED_OUT` and `SIGNAL_EXTRACT` to real
-  Windows paths.
+* Do not leave paths at the `/tmp/vapt/…` defaults on Windows — an absolute
+  POSIX path silently becomes `\tmp\vapt\…` on the current drive. Either pass
+  the extraction as an argument (`py -3.13 poc\01-build-merged-tree.py C:\path\to\extracted`)
+  or set `SIGNAL_EXTRACT`/`MERGED_OUT` to real Windows paths. `poc/01` now
+  locates the extraction itself, creates any missing parent directories, and
+  says so plainly when it cannot find it.
 * `os.symlink` on Windows requires Developer Mode or elevation. `poc/01` tries
   symlink → hard link → copy and says which it used, so on NTFS either set
   `MERGE_LINK=hardlink` (no privileges needed, no extra disk) or accept
@@ -85,6 +127,16 @@ sudo apt-get install -y git python3 python3-venv gcc libc6-dev openssl   # Debia
 About 1.5 GB of free disk: the binary is 116 MB, the extraction 460 MB, and the
 merged tree is made of links (almost free — see `MERGE_LINK` in step 4 if your
 filesystem refuses them).
+
+Steps 2–5 are the same five commands every time, so they are also scripted:
+
+```bash
+bash poc/00-setup.sh --binary ./signal-pyarmor-linux-x86_64 --work /tmp/vapt
+```
+
+It is idempotent — it skips an extraction that exists, re-checks the hash, and
+re-runs the smoke test at the end. The rest of this section shows what it does,
+so you can run or repair the steps individually.
 
 ## 1. Obtain the target and verify it
 

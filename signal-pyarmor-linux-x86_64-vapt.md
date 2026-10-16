@@ -12,7 +12,9 @@
 
 **Assessment date:** 16 October 2026
 
-**Revision 4 — 16 October 2026 (current).** Verification pass over the reproduction material. **F-06's evidence was extended**: with the tokenizer cache seeded, *all seven* agents' requests — five `/v1/chat/completions` and two `/v1/embeddings` — reach the untrusted endpoint, not just the five chat agents (the earlier five-request capture was a side effect of F-05). §9 gap 10 was corrected: it had claimed nine of the 62 protected modules fail to import, whereas the executed evidence shows **62/62 import** after the namespace-marker repair, with the residual limitation being the encrypted function bodies. Appendix A gained the mandatory tokenizer-seeding step (5a) and now shows the correct system-`python3` invocation for `poc/01`. A new runbook, **`poc/README.md`**, documents every script's invocation, required environment and expected output; all of its commands were re-executed from a clean directory when it was written.
+**Revision 5 — 16 October 2026 (current).** Reproducibility fixes from a third-party run-through on an Ubuntu/Kali host. `poc/00-setup.sh` automates steps 1–5 of Appendix A with a hash check and a smoke test. `poc/01` no longer depends on the caller's environment: it locates the extraction (argument, `$SIGNAL_EXTRACT`, working directory, repository root), writes the merged tree beside it, creates missing parents and explains itself when it cannot find the extraction. `poc/02` now propagates its command line into `sys.argv`, so every PoC — including the argument-taking ones — can be run through the reconstructed host, which is the reliable choice on a Python newer than the 3.13 the payload was built with. `poc/README.md` documents which of the two host kinds each script needs and why a Linux or WSL2 host is required at all.
+
+**Revision 4 — 16 October 2026.** Verification pass over the reproduction material. **F-06's evidence was extended**: with the tokenizer cache seeded, *all seven* agents' requests — five `/v1/chat/completions` and two `/v1/embeddings` — reach the untrusted endpoint, not just the five chat agents (the earlier five-request capture was a side effect of F-05). §9 gap 10 was corrected: it had claimed nine of the 62 protected modules fail to import, whereas the executed evidence shows **62/62 import** after the namespace-marker repair, with the residual limitation being the encrypted function bodies. Appendix A gained the mandatory tokenizer-seeding step (5a) and now shows the correct system-`python3` invocation for `poc/01`. A new runbook, **`poc/README.md`**, documents every script's invocation, required environment and expected output; all of its commands were re-executed from a clean directory when it was written.
 
 **Revision 3 — 16 October 2026.** Adds findings **F-15** (enabling `--poc-kit` overrides the operator's BYO LLM configuration and its "isolated Docker" guarantee is a `PATH` check) and **F-16** (analysed source, including credential-like literals, is transmitted verbatim with no redaction and no egress reporting), both with executed proofs. Also closes most of the previous "no end-to-end scan" gap: the full pipeline was driven to completion against a local endpoint, which is how F-15 and F-16 were observed.
 
@@ -1195,7 +1197,7 @@ Recorded so that the assessment is balanced and so these are not regressed:
 
 ## Appendix A — Reproduction runbook
 
-Every command below was executed during this assessment. `$EX` is the extraction directory; `$HOST` is the reconstructed CPython host.
+Every command below was executed during this assessment. `$EX` is the extraction directory; `$HOST` is the reconstructed CPython host. Steps 1–5 are also scripted as **`poc/00-setup.sh`** (hash check, extraction, marker cleanup, merged tree, host build, smoke test), and the per-script invocation and expected output are in **`poc/README.md`**.
 
 ```bash
 # ---------------------------------------------------------------- 0. Setup
@@ -1334,8 +1336,9 @@ Per-script invocation, required environment and expected output are in
 
 | Script | Finding | What it proves |
 |---|---|---|
+| `00-setup.sh` | harness | Runs steps 1–5 end to end: verifies the SHA-256, extracts, removes the 17 markers, builds the merged tree and the host, smoke-tests it, prints the environment exports |
 | `01-build-merged-tree.py` | harness | Repairs the two-tree merge so extension modules and `.pyc` modules coexist; recursive, never writes into the source tree |
-| `02-rebuild-cpython-host.c` | harness | Builds a CPython 3.13 launcher against the bundle's own `libpython3.13.so.1.0`; correct 4-argument `PyRun_SimpleFileExFlags` signature |
+| `02-rebuild-cpython-host.c` | harness | Builds a CPython 3.13 launcher against the bundle's own `libpython3.13.so.1.0`; correct 4-argument `PyRun_SimpleFileExFlags` signature; propagates the command line into `sys.argv` |
 | `03-armored-module-survey.py` | F-03, F-14 | Imports all 62 protected modules with no licence; counts recoverable constants and identifiers |
 | `04-protected-metadata-dump.py` | F-03 | Writes the full string/identifier harvest with per-module provenance |
 | `05-poc-f01-host-shell.py` | F-01 | Executes the shipped `run_shell` tool; metacharacters interpreted, file written outside the workspace |

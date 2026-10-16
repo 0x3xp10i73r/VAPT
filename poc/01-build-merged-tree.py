@@ -17,18 +17,39 @@ support neither (or when MERGE_LINK=copy is set). MERGE_LINK=hardlink forces
 the second strategy. The strategy used is printed at the end.
 
 Environment:
-    SIGNAL_EXTRACT  extraction directory (default /tmp/vapt/signal-pyarmor-linux-x86_64_extracted)
-    MERGED_OUT      output directory     (default /tmp/vapt/merged)
+    SIGNAL_EXTRACT  extraction directory (default: $SIGNAL_EXTRACT, else
+                    ./signal-pyarmor-linux-x86_64_extracted, else next to this script)
+    MERGED_OUT      output directory (default: <extraction>/../merged)
     MERGE_LINK      symlink | hardlink | copy
 """
 import os
 import shutil
+import sys
 from pathlib import Path
 
-X = Path(os.environ.get("SIGNAL_EXTRACT",
-    "/tmp/vapt/signal-pyarmor-linux-x86_64_extracted"))
+
+def find_extract():
+    """Locate the extraction without depending on the caller's environment."""
+    here = Path(__file__).resolve().parent
+    if len(sys.argv) > 1:
+        return Path(sys.argv[1]).expanduser()
+    env = os.environ.get("SIGNAL_EXTRACT")
+    if env:
+        return Path(env).expanduser()
+    candidates = [
+        Path.cwd() / "signal-pyarmor-linux-x86_64_extracted",
+        here.parent / "signal-pyarmor-linux-x86_64_extracted",       # repo root
+        Path("/tmp/vapt/signal-pyarmor-linux-x86_64_extracted"),     # assessment default
+    ]
+    for cand in candidates:
+        if cand.is_dir():
+            return cand
+    return candidates[0]
+
+
+X = find_extract()
 PYZ = X / "PYZ.pyz_extracted"
-OUT = Path(os.environ.get("MERGED_OUT", "/tmp/vapt/merged"))
+OUT = Path(os.environ.get("MERGED_OUT") or (X.parent / "merged")).expanduser()
 LINK_MODE = os.environ.get("MERGE_LINK", "").strip().lower() or None
 USED = set()
 
@@ -74,8 +95,18 @@ def merge(src_a, src_b, dst):
 
 
 if not X.is_dir():
-    raise SystemExit(f"extraction directory not found: {X}\n"
-                     "Set SIGNAL_EXTRACT to the directory produced by pyinstxtractor-ng.")
+    raise SystemExit(
+        "extraction directory not found: %s\n"
+        "\n"
+        "Run poc/00-setup.sh first (it creates everything in one step), or point\n"
+        "at the directory pyinstxtractor-ng produced, either as an argument:\n"
+        "\n"
+        "    python3 poc/01-build-merged-tree.py ~/vapt/signal-pyarmor-linux-x86_64_extracted\n"
+        "\n"
+        "or through the environment:\n"
+        "\n"
+        "    export SIGNAL_EXTRACT=$HOME/vapt/signal-pyarmor-linux-x86_64_extracted\n"
+        % X)
 
 if OUT.exists():
     shutil.rmtree(OUT)

@@ -1,6 +1,13 @@
 /* Minimal host that runs a Python 3.13 script using the interpreter library
  * bundled inside the target PyInstaller/BlackDuck Signal binary.
  * Used for controlled static analysis of frozen .pyc modules.
+ *
+ * The script sees the full command line in sys.argv, so scripts that take
+ * arguments (poc/06 --extract, poc/10 <module>, poc/12 <pyc> <function>) work
+ * unchanged:
+ *
+ *     ./py313host script.py arg1 arg2     ->  sys.argv ==
+ *                                             ['script.py', 'arg1', 'arg2']
  */
 #include <dlfcn.h>
 #include <stdio.h>
@@ -16,6 +23,33 @@ typedef void (*init_fn)(void);
 typedef int (*run_file_fn)(FILE *, const char *, int, void *);
 typedef void (*set_prog_fn)(const wchar_t *);
 typedef int (*py_isinit_fn)(void);
+
+/* PyRun_SimpleFileExFlags does not populate sys.argv, so do it here. */
+typedef void *(*import_fn)(const char *);
+typedef void *(*list_new_fn)(long);
+typedef int (*list_set_fn)(void *, long, void *);
+typedef void *(*unicode_from_string_fn)(const char *);
+typedef int (*set_attr_fn)(void *, const char *, void *);
+
+static int set_argv(void *lib, int argc, char **argv)
+{
+    import_fn import_module = (import_fn)dlsym(lib, "PyImport_ImportModule");
+    list_new_fn list_new = (list_new_fn)dlsym(lib, "PyList_New");
+    list_set_fn list_set = (list_set_fn)dlsym(lib, "PyList_SetItem");
+    unicode_from_string_fn mkstr = (unicode_from_string_fn)dlsym(lib, "PyUnicode_FromString");
+    set_attr_fn set_attr = (set_attr_fn)dlsym(lib, "PyObject_SetAttrString");
+    if (!import_module || !list_new || !list_set || !mkstr || !set_attr) return -1;
+
+    void *sys = import_module("sys");
+    if (!sys) return -1;
+    void *list = list_new(argc - 1);
+    if (!list) return -1;
+    for (int i = 1; i < argc; i++) {
+        void *s = mkstr(argv[i]);
+        if (!s || list_set(list, i - 1, s) != 0) return -1;   /* steals the ref */
+    }
+    return set_attr(sys, "argv", list);
+}
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -38,10 +72,12 @@ int main(int argc, char **argv) {
 
     init();
 
+    if (argc > 2 && set_argv(h, argc, argv) != 0)
+        fprintf(stderr, "warning: could not populate sys.argv\n");
+
     FILE *fp = fopen(argv[1], "r");
     if (!fp) { perror("fopen"); return 5; }
 
-    /* Expose the remaining argv to the script via sys.argv */
     int rc = run_file((FILE *)fp, argv[1], 0, NULL);
     return rc;
 }
