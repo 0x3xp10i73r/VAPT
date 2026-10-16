@@ -259,13 +259,21 @@ gcc -o py313host /path/to/VAPT/poc/02-rebuild-cpython-host.c -ldl
 
 `py313host` `dlopen()`s the `libpython3.13.so.1.0` shipped inside the binary and
 runs a script with it, so product modules run on the interpreter they were built
-for. It finds that library itself — `$PY313_LIB` first, then the extraction
-beside the host binary or its parent, then the working directory, then the
-assessment's path — so nothing needs to be exported for it. `PY313_LIB` is only
-needed if the extraction is somewhere unusual.
+for. `poc/00-setup.sh` compiles the path of the extraction it just built into the
+host, and the host additionally searches — `$PY313_LIB`, `$SIGNAL_EXTRACT`, the
+directory holding the host binary and its parent, the working directory, and the
+assessment's path — looking for `libpython3.13.so.1.0` either directly or inside
+any `*_extracted` subdirectory. So nothing needs to be exported for it, whether
+the host sits next to the extraction or is run from elsewhere. To see which
+library a given invocation loaded:
 
-If the library cannot be found, the host prints every location it looked in and
-the `PY313_LIB=` line to use.
+```bash
+PY313_VERBOSE=1 ./py313host poc/08-collect-runtime-versions.py
+# py313host: using /home/you/VAPT/signal-pyarmor-linux-x86_64_extracted/libpython3.13.so.1.0
+```
+
+`PY313_LIB=/path/to/libpython3.13.so.1.0` names it explicitly and always wins. If
+no library can be found the host prints every location it looked in.
 
 ```bash
 mkdir -p "$WORK/pyhome"            # an empty PYTHONHOME keeps the host's stdlib out

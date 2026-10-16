@@ -135,8 +135,12 @@ SIGNAL_EXTRACT="$EX" MERGED_OUT="$WORK/merged" python3 "$POC/01-build-merged-tre
 
 # ----------------------------------------------------------------- 5. the host
 echo "== 5. reconstructed CPython host =="
-gcc -o "$WORK/py313host" "$POC/02-rebuild-cpython-host.c" -ldl
+# Compile in the runtime path we just extracted, so the host does not have to
+# guess; it still falls back to a search if this binary is moved elsewhere.
+gcc -DPY313_DEFAULT_LIB="\"$EX/libpython3.13.so.1.0\"" \
+    -o "$WORK/py313host" "$POC/02-rebuild-cpython-host.c" -ldl
 echo "   built $WORK/py313host"
+echo "   default runtime: $EX/libpython3.13.so.1.0"
 mkdir -p "$WORK/pyhome"
 
 export PYTHONHOME="$WORK/pyhome"

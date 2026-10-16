@@ -8,6 +8,9 @@
  *
  *     ./py313host script.py arg1 arg2     ->  sys.argv ==
  *                                             ['script.py', 'arg1', 'arg2']
+ *
+ * Set PY313_VERBOSE=1 to print which libpython3.13 was loaded, and
+ * PY313_LIB=/path/to/libpython3.13.so.1.0 to name it explicitly.
  */
 #include <dlfcn.h>
 #include <glob.h>
@@ -46,6 +49,8 @@ typedef int (*py_isinit_fn)(void);
  */
 #define LEAF "libpython3.13.so.1.0"
 
+static int readable(const char *p) { return p && *p && access(p, R_OK) == 0; }
+
 /* PyRun_SimpleFileExFlags does not populate sys.argv, so do it through the
  * stable C API (PyImport_ImportModule / PyList_New / ...). */
 typedef void *(*import_fn)(const char *);
@@ -54,23 +59,61 @@ typedef int (*list_set_fn)(void *, long, void *);
 typedef void *(*unicode_from_string_fn)(const char *);
 typedef int (*set_attr_fn)(void *, const char *, void *);
 
-static int readable(const char *p) { return p && *p && access(p, R_OK) == 0; }
 
-static const char *try_path(char *out, size_t n, const char *fmt, const char *a, const char *b)
+static int readable(const char *p);
+
+/* Append a location to the "looked in" list, skipping consecutive repeats. */
+static void remember(char *tried, size_t tn, const char *fmt, const char *a, const char *b)
 {
-    snprintf(out, n, fmt, a, b);
-    return readable(out) ? out : NULL;
+    char line[PATH_MAX + 64];
+    snprintf(line, sizeof(line), fmt, a, b);
+    size_t len = strlen(tried);
+    char *last = strrchr(tried, '\n');
+    if (last && strcmp(last + 6, line) == 0) return;      /* already listed */
+    if (len < tn) snprintf(tried + len, tn - len, "\n    %s", line);
+}
+
+/* Try <root>/libpython3.13.so.1.0, then <root>/<any>_extracted/libpython3.13.so.1.0
+ * as a real glob. A literal '*' never resolves, which is how the first version
+ * of this function managed to miss an extraction sitting one level down. */
+static const char *try_root(char *out, size_t n, const char *root)
+{
+    snprintf(out, n, "%s/" LEAF, root);
+    if (access(out, R_OK) == 0) return out;
+
+    char pat[PATH_MAX];
+    snprintf(pat, sizeof(pat), "%s/*_extracted/" LEAF, root);
+    glob_t g;
+    if (glob(pat, 0, NULL, &g) == 0) {
+        if (g.gl_pathc > 0) {
+            snprintf(out, n, "%s", g.gl_pathv[0]);
+            globfree(&g);
+            return out;
+        }
+        globfree(&g);
+    }
+    return NULL;
 }
 
 static const char *find_lib(char *out, size_t n, char *tried, size_t tn)
 {
     const char *env = getenv("PY313_LIB");
+#ifdef PY313_DEFAULT_LIB
+    if (PY313_DEFAULT_LIB[0] && access(PY313_DEFAULT_LIB, R_OK) == 0) {
+        snprintf(out, n, "%s", PY313_DEFAULT_LIB);
+        return out;
+    }
+    if (PY313_DEFAULT_LIB[0])
+        remember(tried, tn, "%s", PY313_DEFAULT_LIB, NULL);
+#endif
     if (readable(env)) { snprintf(out, n, "%s", env); return out; }
-    if (env) snprintf(tried + strlen(tried), tn - strlen(tried), "\n    %s ($PY313_LIB)", env);
+    if (env) remember(tried, tn, "%s ($PY313_LIB)", env, NULL);
 
     const char *ex = getenv("SIGNAL_EXTRACT");
-    if (ex && try_path(out, n, "%s/" LEAF, ex, NULL)) return out;
-    if (ex) snprintf(tried + strlen(tried), tn - strlen(tried), "\n    %s/" LEAF " ($SIGNAL_EXTRACT)", ex);
+    if (ex) {
+        if (try_root(out, n, ex)) return out;
+        remember(tried, tn, "%s/[" LEAF "]", ex, NULL);
+    }
 
     char exe[PATH_MAX] = "", dirbuf[PATH_MAX - 8] = "", up[PATH_MAX] = "";
     ssize_t got = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
@@ -80,19 +123,19 @@ static const char *find_lib(char *out, size_t n, char *tried, size_t tn)
         snprintf(up, sizeof(up), "%s/..", dirbuf);
     }
     const char *roots[] = { dirbuf, up, getenv("PWD"), "/tmp/vapt", NULL };
-    static const char *fmts[] = { "%s/" LEAF, "%s/*_extracted/" LEAF };
 
     for (int i = 0; roots[i]; i++) {
         if (!*roots[i]) continue;
-        for (unsigned f = 0; f < sizeof(fmts) / sizeof(*fmts); f++)
-            if (try_path(out, n, fmts[f], roots[i], NULL)) return out;
-        snprintf(tried + strlen(tried), tn - strlen(tried),
-                 "\n    %s/[<name>_extracted/]" LEAF, roots[i]);
+        if (try_root(out, n, roots[i])) return out;
+        remember(tried, tn, "%s/[<name>_extracted/]" LEAF, roots[i], NULL);
     }
 
-    /* last resort: any extraction directory under the usual places */
+    /* last resort: any extraction directory under the temporary directories */
     static const char *pats[] = {
-        "/tmp/vapt/*_extracted/" LEAF, "/tmp/*_extracted/" LEAF, NULL
+        "/tmp/vapt/*/libpython3.13.so.1.0",
+        "/tmp/*_extracted/" LEAF,
+        "/home/*/*/*_extracted/" LEAF,
+        NULL
     };
     for (int i = 0; pats[i]; i++) {
         glob_t g;
@@ -103,7 +146,6 @@ static const char *find_lib(char *out, size_t n, char *tried, size_t tn)
             return out;
         }
         if (rc == 0) globfree(&g);
-        snprintf(tried + strlen(tried), tn - strlen(tried), "\n    %s", pats[i]);
     }
     return NULL;
 }
@@ -146,6 +188,19 @@ int main(int argc, char **argv) {
             " ./py313host script.py\n", tried);
         return 3;
     }
+
+    if (getenv("PY313_VERBOSE")) fprintf(stderr, "py313host: using %s\n", libpath);
+
+    /* Without any path configuration the interpreter starts, cannot find its
+     * stdlib and dies with a fatal error that says nothing about the cause. */
+    if (!getenv("PYTHONHOME") && !getenv("PYTHONPATH") && !getenv("PY313_QUIET"))
+        fprintf(stderr,
+            "py313host: warning: neither PYTHONHOME nor PYTHONPATH is set, so the\n"
+            "           interpreter has no stdlib and will fail to start. Export the\n"
+            "           values printed by poc/00-setup.sh, for example:\n"
+            "             export PYTHONHOME=/path/to/pyhome\n"
+            "             export PYTHONPATH=/path/to/merged:/path/to/<extract>/base_library.zip\n");
+
 
     void *h = dlopen(libpath, RTLD_NOW | RTLD_GLOBAL);
     if (!h) { fprintf(stderr, "dlopen failed: %s (%s)\n", dlerror(), libpath); return 3; }
