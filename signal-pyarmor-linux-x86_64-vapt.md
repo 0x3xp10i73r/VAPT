@@ -79,7 +79,16 @@ Observed product tree inside the binary: `agents/`, `data/`, `prompts/`, `scans/
 
 **Configuration file.** `.signal` — INI-style, with sections such as `[LLM]`, `[LLM_SINGLEFILESCAN_AGENT]`, `[LLM_DATAFLOW_AGENT]`, `[LLM_OVERSIGHT_AGENT]`, `[LLM_EXPLOITATION_AGENT]`, `[LLM_SCA_AGENT]`, `[LLM_MERGEKEY_EMBED_AGENT]`, `[LLM_OVERSIGHT_EMBED_AGENT]`. Supports `${VAR}` environment-variable interpolation.
 
-**Network egress.** Source code, prompts and metadata are sent to a configured LLM endpoint during scanning; embeddings are sent to separate embedding endpoints. The default endpoint is the vendor-hosted `https://llm.core.blackduck.com` (from `--llm-uri` help output). Additional hosts identified in the artefact: `https://llm.labs.blackduck.com` (a string constant inside `pockit/constants.pyc`), `https://poc.polaris.blackduck.com` and `kbtest.blackducksoftware.com`. One further host is contacted at runtime without being configured: `openaipublic.blob.core.windows.net` (see F-05).
+**Operating mode.** `--llm-mode` is `[managed|byo]` and defaults to **`managed`** — the help text names the default explicitly: *"'managed' (default; Black Duck hosted LLM at llm.core.blackduck.com)"*. The vendor gateway is a LiteLLM proxy; a recovered docstring records that the managed path is the only one that honours a `cache: {{no-cache, no-store}}` directive (`agents/sca`, `SCASupervisor.__init__`), which corroborates the gateway's role.
+
+**Network egress.** Source code, prompts and metadata are sent to the configured LLM endpoint during scanning; embeddings go to separate embedding endpoints. Hosts confirmed in this assessment, and how each was confirmed:
+
+| Host | Role | Confirmation |
+|---|---|---|
+| `llm.core.blackduck.com` | vendor-managed gateway (default `--llm-uri` in `managed` mode) | help text, a recovered docstring, and the runtime `DEBUG` config dump (`'llm_uri': 'https://llm.core.blackduck.com/'`) |
+| `llm.labs.blackduck.com` | PoCKit's own default endpoint constant | string constant in `pockit/constants.pyc` (F-15) |
+| `openaipublic.blob.core.windows.net` | `cl100k_base` tokenizer fetch, not operator-configurable | observed on the wire at scan time (F-05) |
+| `bedrock-runtime.<region>.amazonaws.com`, `*.openai.azure.com`, `*.services.ai.azure.com`, `*.cognitiveservices.azure.com`, `www.googleapis.com` | BYO provider endpoints, only when the operator selects that provider | recovered constants and docstrings |
 
 **Local execution.** PoCKit registers a shell-execution tool with `shell=True` and drives Docker for exploit validation.
 
