@@ -19,3 +19,20 @@ poc-f06-selfsigned.pem
 poc-f06-requests.log
 tkcache/
 *.log
+
+# Produced by poc/run-all.sh's dynamic phases (F-05/F-06/F-15/F-16)
+poc-byo.signal
+poc-cfgkey.signal
+poc-tls.signal
+poc-home/
+poc-triage/
+poc-fakebin/
+poc-nodocker-bin/
+poc-*.out
+poc-seed.out
+cache-empty/
+results.sarif
+signal-cache.db
+signal_errors.json
+pockit-workspace/
+pockit_errors.jsonl
