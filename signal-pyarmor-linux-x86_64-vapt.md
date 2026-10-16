@@ -12,6 +12,8 @@
 
 **Assessment date:** 16 October 2026
 
+**Revision 9 — 16 October 2026 (current).** Adds `poc/14-check-f01.py`, a focused one-command check for F-01: it reads the `register_workspace_tools(...)` call site out of every agent module in the shipped archive (three ask for `shell=True`, two get file tools only), disassembles `run_shell` to the exact `subprocess.run(..., shell=True, timeout=120, cwd=...)` call, and then executes the shipped tool with a metacharacter payload on the host, reporting PASS/FAIL per link (`F-01 reproduced: 3/3`). Also: phase 6 of `poc/run-all.sh` now keeps its scan target outside the checkout (a `.gitignore`d target is skipped by the scanner - the very rule F-16 documents), the suite keeps a full transcript at `<work>/poc-run.log` and repeats failed checks in its summary, and the shell scripts are committed executable.
+
 **Revision 8 — 16 October 2026 (current).** **The whole assessment is now one command.** `poc/run-all.sh` runs the offline PoCs and the four dynamic findings (F-05, F-06, F-15, F-16) in a single serial pass, starting and tearing down every listener it needs; it was verified from a fresh clone on 16 October 2026 with **11 checks passing, 0 failures, exit 0** (output transcribed in `poc/README.md`). A first run on a host *with* egress then exposed a defect in the runner itself, now fixed: phase 3 trusted the seeder's exit code, and `poc/seed-tokenizer-cache.py` returned a non-zero code after a fresh, verified fetch (`status: seeded`), so a perfectly good cache was reported as F-05 and the dynamic phases were skipped. The seeder now exits 0 once the cache is present and verified, and the runner decides success by the cache file and its pinned digest, not by any return code. Phase 5's "no docker" stage was also made host-independent: on a machine that *has* docker, the runner re-runs it with a mirror of `PATH` that omits every docker entry and observes the same refusal, which is itself the finding — the gate is a lookup, not a capability check — so the stage is no longer skipped on a typical developer or CI host. The runner
 also keeps its own transcript at `<work>/poc-run.log` and repeats every failed
 check at the end of the run, so a failure can be diagnosed from the run log
@@ -169,11 +171,11 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
                  text=True, timeout=120, cwd=str(workspace_dir))
   ```
 
-  The keyword tuple `('shell', 'capture_output', 'text', 'timeout', 'cwd')` and the literal `120` are visible in the bytecode. The tool is registered on the agent by `register_workspace_tools(agent, workspace_dir, source_code_path, shell, write)`; `environment_setup_agent`, `exploit_agent` and `fix_verification_agent` all reference it and pass a `shell` argument.
+  The keyword tuple `('shell', 'capture_output', 'text', 'timeout', 'cwd')` and the literal `120` are visible in the bytecode. The tool is registered on the agent by `register_workspace_tools(agent, workspace_dir, source_code_path, shell, write)`; `environment_setup_agent`, `exploit_agent` and `fix_verification_agent` all reference it and pass `shell=True` (`poc/14-check-f01.py` reads that call site out of each agent's bytecode: the two remaining agents, `research_agent` and `validate_exploit_agent`, get the file tools only).
 
   The tool description handed to the model reads: *"Execute a shell command in the workspace directory and return its output."* The packaged prompt `pockit/prompts/exploit_creator_prompt.prompt` directs the agent to run `docker cp <container_name>:/tmp/pwned ./evidence/pwned` — i.e. a **host** command, not a command inside the container.
 
-- **PoC.** `poc/05-poc-f01-host-shell.py` imports the **shipped, unmodified** `pockit.agents.shared_tools` from the extraction, registers the workspace tools exactly as the product does (`shell=True`, `write=True`), obtains the `run_shell` closure and invokes it with a command containing shell metacharacters. Executed result:
+- **PoC.** **`poc/14-check-f01.py` is this finding in one command** — it checks the three links separately (which agents ask for `shell=True`; what `run_shell` calls; the tool executing a metacharacter payload on the host) and prints `F-01 reproduced: 3/3`. `poc/05-poc-f01-host-shell.py` imports the **shipped, unmodified** `pockit.agents.shared_tools` from the extraction, registers the workspace tools exactly as the product does (`shell=True`, `write=True`), obtains the `run_shell` closure and invokes it with a command containing shell metacharacters. Executed result:
 
   ```
   [*] registered tools: ['_safe', 'agent', 'call_count', 'file_search', 'list_directory',
@@ -1383,6 +1385,7 @@ Per-script invocation, required environment and expected output are in
 | `03-armored-module-survey.py` | F-03, F-14 | Imports all 62 protected modules with no licence; counts recoverable constants and identifiers |
 | `04-protected-metadata-dump.py` | F-03 | Writes the full string/identifier harvest with per-module provenance |
 | `05-poc-f01-host-shell.py` | F-01 | Executes the shipped `run_shell` tool; metacharacters interpreted, file written outside the workspace |
+| `14-check-f01.py` | F-01 | The whole F-01 chain in one command: which agents register the shell tool (from their bytecode), what `run_shell` calls, and the tool executing a metacharacter payload on the host - `F-01 reproduced: 3/3` |
 | `06-poc-f02-workspace.py` | F-02 | Path traversal via the GUID, symlink adoption under `exist_ok=True`, default mode `0o755` |
 | `07-poc-f06-tls-endpoint.py` | F-06 | Logging HTTPS endpoint with a self-signed certificate; captures the requests that verification-off lets through |
 | `08-collect-runtime-versions.py` | F-04, F-09, F-11, F-12 | Prints every security-relevant linked/loaded version from inside the reconstructed runtime |

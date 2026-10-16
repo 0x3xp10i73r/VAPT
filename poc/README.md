@@ -207,6 +207,62 @@ pre-seed `tkcache/cached` (below) to run the rest offline. Phase
 entry removed — the gate is a lookup, so the refusal is demonstrable either way
 and the stage only skips if even that does not reproduce it.
 
+### Just F-01 — the host shell
+
+One script checks the whole chain of F-01 and nothing else:
+
+```bash
+export PYTHONHOME=$WORK/pyhome
+export PYTHONPATH=$WORK/merged:$WORK/signal-pyarmor-linux-x86_64_extracted/base_library.zip
+$WORK/py313host poc/14-check-f01.py
+```
+
+Three links, checked separately; exit code 0 only if all three hold:
+
+```
+== A. wiring: which shipped agents ask for a shell tool ==
+   environment_setup_agent.pyc        kwargs=('workspace_dir', 'source_code_path', 'shell')  consts=[True]
+                                                   -> shell=True
+   exploit_agent.pyc                  kwargs=('workspace_dir', 'source_code_path', 'shell')  consts=[True]
+                                                   -> shell=True
+   fix_verification_agent.pyc         kwargs=('workspace_dir', ..., 'shell', 'write')  consts=[True, True]
+                                                   -> shell=True, write=True
+   research_agent.pyc                 kwargs=('workspace_dir', 'source_code_path')  consts=[]
+                                                   -> (file tools only)
+   validate_exploit_agent.pyc         kwargs=('workspace_dir', 'source_code_path')  consts=[]
+                                                   -> (file tools only)
+   PASS - 3 agent(s) register the shell tool
+
+== B. implementation: what run_shell calls ==
+   kwargs    : ('shell', 'capture_output', 'text', 'timeout', 'cwd')
+   constants : [True, True, True, 120]   (and cwd, computed as str(workspace_dir))
+   call      : subprocess.run(command, shell=True, capture_output=True,
+               text=True, timeout=120, cwd=str(workspace_dir))
+   PASS
+
+== C. execution: the shipped tool, on this host ==
+   registered tools: ['file_search', 'list_directory', 'read_file', 'run_shell', 'write_file']
+   payload  : pwd; echo metachar-proof; echo uid=$(id -u); printf 'A%s' 'B'; echo $((6*7)); echo POC > /tmp/pockit-f01-<pid>.proof
+   --- tool output ---
+   | /tmp/pockit-f01-workspace
+   | metachar-proof
+   | uid=1000
+   | AB42
+   PASS cwd is the workspace / metacharacters interpreted / file written outside the workspace
+   F-01 reproduced: 3/3
+```
+
+The `pwd; ...; $((6*7)); printf 'A%s' 'B'` payload is the point of check C: with
+`shell=False` it would be looked up as one executable named `pwd; echo ...` and
+fail, and `printf`'s `%s` would not be substituted. Instead the markers, the
+arithmetic and the format all evaluate, the working directory is the PoCKit
+workspace, and the redirect lands on `/tmp` - outside that workspace. The
+payload is harmless (it writes one marker file, which the script deletes).
+
+It runs shipped product code, like `poc/05`; read both before running them.
+`poc/05` is the same execution check with more commentary, `poc/12` is the
+disassembler if you want to read the bytecode yourself.
+
 ## 1. Obtain the target and verify it
 
 The binary is stored in this repository as two parts on the `binary-drop` branch
