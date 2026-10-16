@@ -12,6 +12,32 @@ import importlib
 import os
 import sys
 import types
+def find_extract():
+    """Locate the extraction without depending on the caller's environment."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    env = os.environ.get("SIGNAL_EXTRACT")
+    candidates = []
+    if env:
+        candidates.append(env)
+    candidates += [
+        os.path.join(os.getcwd(), "signal-pyarmor-linux-x86_64_extracted"),
+        os.path.join(os.path.dirname(here), "signal-pyarmor-linux-x86_64_extracted"),
+        "/tmp/vapt/signal-pyarmor-linux-x86_64_extracted",
+    ]
+    for cand in candidates:
+        if os.path.isdir(os.path.join(cand, "PYZ.pyz_extracted")):
+            if env and os.path.abspath(cand) != os.path.abspath(env):
+                sys.stderr.write("note: $SIGNAL_EXTRACT=%s is not an extraction; using %s\n"
+                                 % (env, cand))
+            return cand
+    return candidates[0] if candidates else "./signal-pyarmor-linux-x86_64_extracted"
+
+
+def neutral_cwd(extract):
+    """A cwd that is not inside the merged tree (numpy refuses to import then)."""
+    parent = os.path.dirname(os.path.abspath(extract))
+    return parent if os.path.isdir(parent) else tempfile.gettempdir()
+
 
 
 def load_shared_tools(product):
@@ -57,7 +83,7 @@ def capture_locals(module, fn_name, call):
 
 
 def main():
-    product = os.environ.get("SIGNAL_EXTRACT", "/tmp/vapt/signal-pyarmor-linux-x86_64_extracted")
+    product = find_extract()
     st = load_shared_tools(product)
 
     workspace = os.environ.get("POC_WORKSPACE", "/tmp/pockit-poc-workspace")

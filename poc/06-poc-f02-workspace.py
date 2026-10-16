@@ -19,6 +19,32 @@ import os
 import shutil
 import stat
 import sys
+def find_extract():
+    """Locate the extraction without depending on the caller's environment."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    env = os.environ.get("SIGNAL_EXTRACT")
+    candidates = []
+    if env:
+        candidates.append(env)
+    candidates += [
+        os.path.join(os.getcwd(), "signal-pyarmor-linux-x86_64_extracted"),
+        os.path.join(os.path.dirname(here), "signal-pyarmor-linux-x86_64_extracted"),
+        "/tmp/vapt/signal-pyarmor-linux-x86_64_extracted",
+    ]
+    for cand in candidates:
+        if os.path.isdir(os.path.join(cand, "PYZ.pyz_extracted")):
+            if env and os.path.abspath(cand) != os.path.abspath(env):
+                sys.stderr.write("note: $SIGNAL_EXTRACT=%s is not an extraction; using %s\n"
+                                 % (env, cand))
+            return cand
+    return candidates[0] if candidates else "./signal-pyarmor-linux-x86_64_extracted"
+
+
+def neutral_cwd(extract):
+    """A cwd that is not inside the merged tree (numpy refuses to import then)."""
+    parent = os.path.dirname(os.path.abspath(extract))
+    return parent if os.path.isdir(parent) else tempfile.gettempdir()
+
 
 
 def load_setup_workspace(product):
@@ -36,8 +62,7 @@ def show(label, path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--extract", default=os.environ.get(
-        "SIGNAL_EXTRACT", "/tmp/vapt/signal-pyarmor-linux-x86_64_extracted"))
+    ap.add_argument("--extract", default=find_extract())
     args = ap.parse_args()
     setup_workspace = load_setup_workspace(args.extract)
 

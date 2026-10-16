@@ -12,12 +12,40 @@ import os
 import sys
 import types
 from pathlib import Path
+def find_extract():
+    """Locate the extraction without depending on the caller's environment."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    env = os.environ.get("SIGNAL_EXTRACT")
+    candidates = []
+    if env:
+        candidates.append(env)
+    candidates += [
+        os.path.join(os.getcwd(), "signal-pyarmor-linux-x86_64_extracted"),
+        os.path.join(os.path.dirname(here), "signal-pyarmor-linux-x86_64_extracted"),
+        "/tmp/vapt/signal-pyarmor-linux-x86_64_extracted",
+    ]
+    for cand in candidates:
+        if os.path.isdir(os.path.join(cand, "PYZ.pyz_extracted")):
+            if env and os.path.abspath(cand) != os.path.abspath(env):
+                sys.stderr.write("note: $SIGNAL_EXTRACT=%s is not an extraction; using %s\n"
+                                 % (env, cand))
+            return cand
+    return candidates[0] if candidates else "./signal-pyarmor-linux-x86_64_extracted"
 
-OUT = Path(os.environ.get("ANALYSIS_OUT", "/tmp/vapt/analysis"))
-OUT.mkdir(exist_ok=True)
-PRODUCT = Path(os.environ.get(
-    "SIGNAL_EXTRACT", "/tmp/vapt/signal-pyarmor-linux-x86_64_extracted"))
-os.chdir("/tmp/vapt")
+
+def neutral_cwd(extract):
+    """A cwd that is not inside the merged tree (numpy refuses to import then)."""
+    parent = os.path.dirname(os.path.abspath(extract))
+    return parent if os.path.isdir(parent) else tempfile.gettempdir()
+
+import tempfile
+
+EXTRACT = find_extract()
+PRODUCT = Path(EXTRACT)
+OUT = Path(os.environ.get("ANALYSIS_OUT")
+           or os.path.join(os.path.dirname(os.path.abspath(EXTRACT)), "analysis"))
+OUT.mkdir(parents=True, exist_ok=True)
+os.chdir(neutral_cwd(EXTRACT))
 sys.setrecursionlimit(30000)
 
 importlib.import_module("numpy")  # warm the numeric stack once

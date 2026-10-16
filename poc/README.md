@@ -324,7 +324,7 @@ cannot find the file.
 | # | Command (see the footnote below) | Finding | Verified output |
 |---|---|---|---|
 | 03 | `./py313host $POC/03-armored-module-survey.py` | F-03, F-14 | `62 / 62 imported`, `0 raised`, `3049 strings`, `4652 identifiers` — **with no licence file present** |
-| 04 | `./py313host $POC/04-protected-metadata-dump.py` | F-03 | `total harvested entries: 14344` → `$ANALYSIS_OUT/protected_harvest.tsv` (default `/tmp/vapt/analysis`, parent must exist) |
+| 04 | `./py313host $POC/04-protected-metadata-dump.py` | F-03 | `total harvested entries: 14344` → `analysis/protected_harvest.tsv` beside the extraction (`$ANALYSIS_OUT` overrides it) |
 | 05 | `./py313host $POC/05-poc-f01-host-shell.py` | **F-01** | `uid=1001(user) …`, hostname `e2b.local`, `[+] host file /tmp/pockit-poc-escape-proof created: True` |
 | 06 | `./py313host $POC/06-poc-f02-workspace.py --extract $SIGNAL_EXTRACT` | **F-02** | escaped workspace created from a traversing GUID; planted symlink adopted; fresh workspace mode `0o755` |
 
