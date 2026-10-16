@@ -12,7 +12,9 @@
 
 **Assessment date:** 16 October 2026
 
-**Revision 5 — 16 October 2026 (current).** Reproducibility fixes from a third-party run-through on an Ubuntu/Kali host. `poc/00-setup.sh` automates steps 1–5 of Appendix A with a hash check and a smoke test. `poc/01` no longer depends on the caller's environment: it locates the extraction (argument, `$SIGNAL_EXTRACT`, working directory, repository root), writes the merged tree beside it, creates missing parents and explains itself when it cannot find the extraction. `poc/02` now propagates its command line into `sys.argv`, so every PoC — including the argument-taking ones — can be run through the reconstructed host, which is the reliable choice on a Python newer than the 3.13 the payload was built with. `poc/README.md` documents which of the two host kinds each script needs and why a Linux or WSL2 host is required at all. `poc/02` also locates the runtime it `dlopen()`s instead of assuming the assessment's extraction path, and every script finds the extraction itself, so the PoCs run from any directory (verified from a checkout whose extraction sits in the repository root).
+**Revision 6 — 16 October 2026 (current).** `poc/seed-tokenizer-cache.py` seeds the tiktoken cache F-05 requires, using the copy shipped inside the binary (so no host installation is needed), verifies an existing cache against the expected digest and prints the fetch commands when there is no egress. `poc/02` locates the runtime library rather than assuming the assessment's path. Every PoC now finds the extraction itself, and the whole suite was re-verified from a checkout whose extraction sits in the repository root.
+
+**Revision 5 — 16 October 2026.** Reproducibility fixes from a third-party run-through on an Ubuntu/Kali host. `poc/00-setup.sh` automates steps 1–5 of Appendix A with a hash check and a smoke test. `poc/01` no longer depends on the caller's environment: it locates the extraction (argument, `$SIGNAL_EXTRACT`, working directory, repository root), writes the merged tree beside it, creates missing parents and explains itself when it cannot find the extraction. `poc/02` now propagates its command line into `sys.argv`, so every PoC — including the argument-taking ones — can be run through the reconstructed host, which is the reliable choice on a Python newer than the 3.13 the payload was built with. `poc/README.md` documents which of the two host kinds each script needs and why a Linux or WSL2 host is required at all. `poc/02` also locates the runtime it `dlopen()`s instead of assuming the assessment's extraction path, and every script finds the extraction itself, so the PoCs run from any directory (verified from a checkout whose extraction sits in the repository root).
 
 **Revision 4 — 16 October 2026.** Verification pass over the reproduction material. **F-06's evidence was extended**: with the tokenizer cache seeded, *all seven* agents' requests — five `/v1/chat/completions` and two `/v1/embeddings` — reach the untrusted endpoint, not just the five chat agents (the earlier five-request capture was a side effect of F-05). §9 gap 10 was corrected: it had claimed nine of the 62 protected modules fail to import, whereas the executed evidence shows **62/62 import** after the namespace-marker repair, with the residual limitation being the encrypted function bodies. Appendix A gained the mandatory tokenizer-seeding step (5a) and now shows the correct system-`python3` invocation for `poc/01`. A new runbook, **`poc/README.md`**, documents every script's invocation, required environment and expected output; all of its commands were re-executed from a clean directory when it was written.
 
@@ -1238,6 +1240,9 @@ run() { /tmp/vapt/py313host "$@"; }
 # tiktoken fetches cl100k_base.tiktoken at first use and verifies the contents
 # against a compiled-in digest, so an empty or hand-written placeholder is
 # rejected. Populate the cache on a host that has egress, then copy it over:
+#   ./py313host poc/seed-tokenizer-cache.py   # uses the tiktoken shipped in the
+#   #   binary; prints the TIKTOKEN_CACHE_DIR to export and verifies the digest
+#   # or, on a host with egress and without the bundle:
 #   mkdir -p tkcache/cached && TIKTOKEN_CACHE_DIR=$PWD/tkcache/cached python3 -c \
 #       "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 #   sha256sum tkcache/cached/*   # cache file name = sha1(blob url):
@@ -1349,6 +1354,7 @@ Per-script invocation, required environment and expected output are in
 | `10-introspect-protected-module.py` | F-03 | Prints docstrings, classes and full signatures for a protected module imported with no licence |
 | `11-analyse-pockit-endpoint.py` | F-15 | Reads PoCKit's plain `.pyc` to show its endpoint constant, environment override and required credential |
 | `12-disassemble-pyc.py` | F-01, F-02 | Disassembles a module or a single function from an extracted `.pyc`; used for PoCKit's plain-bytecode modules |
+| `seed-tokenizer-cache.py` | F-05 | Seeds the hash-pinned tiktoken cache every scan needs, using the tiktoken shipped in the binary; verifies an existing cache and prints the fallback if there is no egress |
 | `13-capture-llm-payload.py` | F-16 | Records the exact prompts a scan sends to an LLM endpoint (headers redacted, bodies verbatim) |
 
 ---

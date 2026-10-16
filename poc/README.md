@@ -527,20 +527,31 @@ workarounds are an egress rule or a pre-seeded cache.
 
 tiktoken's cache is **hash-pinned**: the cached filename is `sha1(blob_url)` and
 the contents are verified against a compiled-in digest, so an empty or
-hand-written placeholder file does **not** satisfy it. Seed it on a host that has
-egress:
+hand-written placeholder file does **not** satisfy it. `poc/seed-tokenizer-cache.py`
+does the whole job, using the tiktoken that ships inside the binary — so nothing
+needs installing on your machine:
 
 ```bash
-# either let tiktoken populate the cache itself
-mkdir -p tkcache/cached
-TIKTOKEN_CACHE_DIR=$PWD/tkcache/cached python3 -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+# run it through the reconstructed host (needs the step 5 exports)
+./py313host poc/seed-tokenizer-cache.py                    # -> <extraction>/../tkcache/cached
+./py313host poc/seed-tokenizer-cache.py /path/to/cache     # or anywhere you like
 
-# or download the blob and name it after the URL it belongs to
-curl -o tkcache/cached/9b5ad71b2ce5302211f9c61530b329a4922fc6a4 \
+# it prints the directory to use:
+#   status: ok
+#   export TIKTOKEN_CACHE_DIR=/home/you/VAPT/tkcache/cached
+```
+
+Re-running it is safe — it verifies an existing file against the expected
+SHA-256 and tells you if it is wrong. If *this* machine has no egress either, the
+script says so (that is F-05 reproducing itself) and prints the file to fetch
+elsewhere:
+
+```bash
+# on a host with egress
+curl -fL -o tkcache/cached/9b5ad71b2ce5302211f9c61530b329a4922fc6a4 \
   https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken
 
-sha256sum tkcache/cached/*
-# 223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7  …/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+sha256sum tkcache/cached/*     # 223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7
 ```
 
 Copy `tkcache/` to the machine under test and point the run at
