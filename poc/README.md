@@ -259,9 +259,13 @@ gcc -o py313host /path/to/VAPT/poc/02-rebuild-cpython-host.c -ldl
 
 `py313host` `dlopen()`s the `libpython3.13.so.1.0` shipped inside the binary and
 runs a script with it, so product modules run on the interpreter they were built
-for. It defaults to
-`/tmp/vapt/signal-pyarmor-linux-x86_64_extracted/libpython3.13.so.1.0`; set
-`PY313_LIB` if your extraction is elsewhere.
+for. It finds that library itself — `$PY313_LIB` first, then the extraction
+beside the host binary or its parent, then the working directory, then the
+assessment's path — so nothing needs to be exported for it. `PY313_LIB` is only
+needed if the extraction is somewhere unusual.
+
+If the library cannot be found, the host prints every location it looked in and
+the `PY313_LIB=` line to use.
 
 ```bash
 mkdir -p "$WORK/pyhome"            # an empty PYTHONHOME keeps the host's stdlib out
@@ -561,7 +565,9 @@ mandatory for the dynamic PoCs.
 - **Advisory ranges drift.** `poc/09`'s ranges were correct on 2026-10-16;
   re-check them against your advisory source before relying on the verdicts.
 - **`poc/09`, `10`, `03`, `04`, `05` and `06` need the repaired tree** from steps
-  2–4. If the extraction is stale or the markers were not removed, `poc/03` will
+  2–4. Every script finds that tree itself (`$SIGNAL_EXTRACT`, the working
+  directory, the repository root), so only `PYTHONHOME`/`PYTHONPATH` have to be
+  exported for the `py313host` scripts. If the extraction is stale or the markers were not removed, `poc/03` will
   report import failures instead of `62/62`.
 - **The mock endpoints in `poc/07` and `poc/13` never forward anything** and bind
   `0.0.0.0`; they are throwaway local listeners, so run them on a trusted network

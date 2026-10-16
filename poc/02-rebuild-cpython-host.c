@@ -10,8 +10,13 @@
  *                                             ['script.py', 'arg1', 'arg2']
  */
 #include <dlfcn.h>
+#include <glob.h>
+#include <libgen.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include <wchar.h>
 
 typedef void (*init_fn)(void);
@@ -24,12 +29,84 @@ typedef int (*run_file_fn)(FILE *, const char *, int, void *);
 typedef void (*set_prog_fn)(const wchar_t *);
 typedef int (*py_isinit_fn)(void);
 
-/* PyRun_SimpleFileExFlags does not populate sys.argv, so do it here. */
+/* Locate libpython3.13.so.1.0 inside the extraction.
+ *
+ * The assessment ran with the extraction at /tmp/vapt, but nobody else does,
+ * so the library is searched for rather than assumed:
+ *
+ *   1. $PY313_LIB
+ *   2. $SIGNAL_EXTRACT/libpython3.13.so.1.0
+ *   3. <dir of this binary>/[<anything>_extracted/]libpython3.13.so.1.0
+ *   4. <parent of that dir>/[<anything>_extracted/]libpython3.13.so.1.0
+ *   5. $PWD/[<anything>_extracted/]libpython3.13.so.1.0
+ *   6. /tmp/vapt/[<anything>_extracted/]libpython3.13.so.1.0   (assessment default)
+ *
+ * Returns the path, or NULL if nothing was found; `tried` collects the places
+ * that were looked in, for the error message.
+ */
+#define LEAF "libpython3.13.so.1.0"
+
+/* PyRun_SimpleFileExFlags does not populate sys.argv, so do it through the
+ * stable C API (PyImport_ImportModule / PyList_New / ...). */
 typedef void *(*import_fn)(const char *);
 typedef void *(*list_new_fn)(long);
 typedef int (*list_set_fn)(void *, long, void *);
 typedef void *(*unicode_from_string_fn)(const char *);
 typedef int (*set_attr_fn)(void *, const char *, void *);
+
+static int readable(const char *p) { return p && *p && access(p, R_OK) == 0; }
+
+static const char *try_path(char *out, size_t n, const char *fmt, const char *a, const char *b)
+{
+    snprintf(out, n, fmt, a, b);
+    return readable(out) ? out : NULL;
+}
+
+static const char *find_lib(char *out, size_t n, char *tried, size_t tn)
+{
+    const char *env = getenv("PY313_LIB");
+    if (readable(env)) { snprintf(out, n, "%s", env); return out; }
+    if (env) snprintf(tried + strlen(tried), tn - strlen(tried), "\n    %s ($PY313_LIB)", env);
+
+    const char *ex = getenv("SIGNAL_EXTRACT");
+    if (ex && try_path(out, n, "%s/" LEAF, ex, NULL)) return out;
+    if (ex) snprintf(tried + strlen(tried), tn - strlen(tried), "\n    %s/" LEAF " ($SIGNAL_EXTRACT)", ex);
+
+    char exe[PATH_MAX] = "", dirbuf[PATH_MAX - 8] = "", up[PATH_MAX] = "";
+    ssize_t got = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    if (got > 0) {
+        exe[got] = '\0';
+        snprintf(dirbuf, sizeof(dirbuf), "%s", dirname(exe));
+        snprintf(up, sizeof(up), "%s/..", dirbuf);
+    }
+    const char *roots[] = { dirbuf, up, getenv("PWD"), "/tmp/vapt", NULL };
+    static const char *fmts[] = { "%s/" LEAF, "%s/*_extracted/" LEAF };
+
+    for (int i = 0; roots[i]; i++) {
+        if (!*roots[i]) continue;
+        for (unsigned f = 0; f < sizeof(fmts) / sizeof(*fmts); f++)
+            if (try_path(out, n, fmts[f], roots[i], NULL)) return out;
+        snprintf(tried + strlen(tried), tn - strlen(tried),
+                 "\n    %s/[<name>_extracted/]" LEAF, roots[i]);
+    }
+
+    /* last resort: any extraction directory under the usual places */
+    static const char *pats[] = {
+        "/tmp/vapt/*_extracted/" LEAF, "/tmp/*_extracted/" LEAF, NULL
+    };
+    for (int i = 0; pats[i]; i++) {
+        glob_t g;
+        int rc = glob(pats[i], 0, NULL, &g);
+        if (rc == 0 && g.gl_pathc > 0) {
+            snprintf(out, n, "%s", g.gl_pathv[0]);
+            globfree(&g);
+            return out;
+        }
+        if (rc == 0) globfree(&g);
+        snprintf(tried + strlen(tried), tn - strlen(tried), "\n    %s", pats[i]);
+    }
+    return NULL;
+}
 
 static int set_argv(void *lib, int argc, char **argv)
 {
@@ -57,11 +134,21 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    const char *libpath = getenv("PY313_LIB");
-    if (!libpath) libpath = "/tmp/vapt/signal-pyarmor-linux-x86_64_extracted/libpython3.13.so.1.0";
+    static char libpath[PATH_MAX];
+    static char tried[8192] = "";
+    if (!find_lib(libpath, sizeof(libpath), tried, sizeof(tried))) {
+        fprintf(stderr,
+            "libpython3.13.so.1.0 not found. Looked in:%s\n"
+            "\n"
+            "Run poc/00-setup.sh (it extracts the archive and builds this host),\n"
+            "or point at the library directly:\n"
+            "    PY313_LIB=/path/to/signal-pyarmor-linux-x86_64_extracted/" LEAF
+            " ./py313host script.py\n", tried);
+        return 3;
+    }
 
     void *h = dlopen(libpath, RTLD_NOW | RTLD_GLOBAL);
-    if (!h) { fprintf(stderr, "dlopen failed: %s\n", dlerror()); return 3; }
+    if (!h) { fprintf(stderr, "dlopen failed: %s (%s)\n", dlerror(), libpath); return 3; }
 
     set_prog_fn set_prog = (set_prog_fn)dlsym(h, "Py_SetProgramName");
     init_fn init = (init_fn)dlsym(h, "Py_Initialize");
