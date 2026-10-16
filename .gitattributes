@@ -1,0 +1,6 @@
+# Keep POSIX-sensitive files byte-exact (LF) on every platform.
+# Shell scripts must run in bash; .signal must parse inside the target app.
+*.sh     text eol=lf
+.signal  text eol=lf
+*.py     text eol=lf
+*.c      text eol=lf
