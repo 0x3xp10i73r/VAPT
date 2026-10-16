@@ -191,8 +191,10 @@ Verified on 16 October 2026 in a fresh clone of this repository, binary in
   reproduced: 11   failed: 0   skipped: 0
 ```
 
-It exits non-zero if any check fails, and it writes the raw evidence for each
-phase into the work directory (`poc-f05.out`, `poc-f15a…d.out`,
+It exits non-zero if any check fails, and a failing run repeats every failed
+check under `failed checks:` so the tail of the output always says what broke.
+Every run is also kept in full as `<work>/poc-run.log`. It writes the raw
+evidence for each phase into the work directory (`poc-f05.out`, `poc-f15a…d.out`,
 `poc-f16-capture.log`, `poc-f06-requests.log`, `poc-docker-stub.log`). Phase 3 is
 the only step that wants network access — it fetches the tiktoken tokenizer. It
 judges success by the cache file itself (present, non-empty, and — where

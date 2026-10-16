@@ -25,6 +25,13 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$WORK" ] || WORK="$(cd "$POC/.." && pwd)"      # default: the checkout this script lives in
 mkdir -p "$WORK"
+RUNLOG="$WORK/poc-run.log"
+if [ -w "$WORK" ]; then
+    : > "$RUNLOG"
+    exec > >(tee -a "$RUNLOG") 2>&1          # so a failed run can always be read back
+else
+    RUNLOG="(not kept: $WORK is not writable)"
+fi
 
 LISTENERS=()
 cleanup() {
@@ -35,12 +42,23 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 pass=0; fail=0; skip=0
+FAILED=()
 result() {                     # result <ok|FAIL|skip> <finding> <text>
     case "$1" in
         ok)   pass=$((pass+1)); printf '  ok    %-7s %s\n' "$2" "$3" ;;
         skip) skip=$((skip+1)); printf '  --    %-7s %s\n' "$2" "$3" ;;
-        *)    fail=$((fail+1)); printf '  FAIL  %-7s %s\n' "$2" "$3" ;;
+        *)    fail=$((fail+1)); printf '  FAIL  %-7s %s\n' "$2" "$3"
+              FAILED+=("$2 - $3") ;;
     esac
+}
+summary() {                    # summary -> exit code; always names what failed
+    printf '\n  reproduced: %d   failed: %d   skipped: %d\n' "$pass" "$fail" "$skip"
+    if [ "${#FAILED[@]}" -gt 0 ]; then
+        echo "  failed checks:"
+        for f in "${FAILED[@]}"; do echo "    $f"; done
+    fi
+    echo "  run log: $RUNLOG"
+    [ "$fail" -eq 0 ]
 }
 nodocker_path() {              # mirror $PATH into a directory without docker
     local out="$WORK/poc-nodocker-bin" p e b saved="$IFS"
@@ -138,8 +156,7 @@ fi
 
 if [ "$SKIP_DYNAMIC" = 1 ]; then
     for f in F-05 F-15 F-16 F-06; do result skip "$f" "--skip-dynamic"; done
-    printf '\n  reproduced: %d   failed: %d   skipped: %d\n' "$pass" "$fail" "$skip"
-    exit 0
+    summary && exit 0 || exit 1
 fi
 
 echo
@@ -169,8 +186,7 @@ if [ -n "$CACHEFILE" ] && [ -s "$CACHEFILE" ]; then
 else
     result FAIL "F-05" "no tokenizer cache - the dynamic phases cannot run (this IS F-05; seeder exit $seed_rc)"
     for f in F-15 F-16 F-06; do result skip "$f" "needs the tokenizer cache"; done
-    printf '\n  reproduced: %d   failed: %d   skipped: %d\n' "$pass" "$fail" "$skip"
-    exit 1
+    summary && exit 0 || exit 1
 fi
 
 # --- a scan needs a target and a BYO config ---------------------------------
@@ -369,7 +385,6 @@ echo
 echo "=============================================================="
 echo " summary"
 echo "=============================================================="
-printf '  reproduced: %d   failed: %d   skipped: %d\n' "$pass" "$fail" "$skip"
 cat <<EOF
 
   Raw output for every phase is under $WORK:
@@ -383,4 +398,4 @@ cat <<EOF
   vendor-side behaviour. Those need a real model, a real Docker daemon and
   written authorisation respectively.
 EOF
-[ "$fail" -eq 0 ] && exit 0 || exit 1
+summary && exit 0 || exit 1
