@@ -1218,8 +1218,10 @@ pyinstxtractor-ng signal-pyarmor-linux-x86_64          # 485 entries; PYZ -> 6,3
 # ------------------- 4. Repair the reconstruction, then build a CPython 3.13 host
 gcc -o /tmp/vapt/py313host poc/02-rebuild-cpython-host.c -ldl
 SIGNAL_EXTRACT=$EX python3 poc/01-build-merged-tree.py
-#   -> "merged entries at top level: 318"; symlinks in the merged tree point back
-#      at the extraction, so the source tree is never touched.
+#   -> "merged entries at top level: 318" / "leaf strategy: symlink"; every leaf
+#      in the merged tree points back at the extraction, so the source tree is
+#      never touched. (MERGE_LINK=symlink|hardlink|copy overrides the strategy
+#      for filesystems without symlink support; the copy fallback needs ~408 MB.)
 #   Run this with the SYSTEM python3, not with py313host, and keep PYTHONHOME
 #   unset for it. Also delete the 17 header-only (16-byte) namespace markers first
 #   (a header-only X.pyc next to a real X/ directory makes `import X` fail):

@@ -17,6 +17,65 @@ There are **two kinds of script** and they need different interpreters:
 
 ---
 
+## Which host can run this?
+
+The artefact is a **Linux x86-64 ELF executable**. It is not a Windows program,
+and no Python on Windows can make it one — its payload contains Linux `.so`
+libraries and a Linux CPython 3.13 runtime that the host program `dlopen()`s.
+
+| | Windows (native) | macOS (native) | Linux / WSL2 |
+|---|---|---|---|
+| Steps 2–3 — unpack and repair the archive | yes | yes | yes |
+| `poc/01` merged tree | only with `MERGE_LINK` (see below) — and nothing can consume it | same | yes |
+| `poc/11`, `poc/12` — read the extracted `.pyc` | yes, with **Python 3.13** | yes, with 3.13 | yes |
+| `poc/03`–`06`, `09`, `10` — run product code | no | no | yes |
+| `poc/07`, `13` + any real scan | no | no | yes |
+
+**Recommended: run it under WSL2.** From an elevated PowerShell:
+
+```powershell
+wsl --install -d Ubuntu          # then start Ubuntu once and set a UNIX user
+```
+
+Inside Ubuntu, work in the **Linux** filesystem, not under `/mnt/c` — the Windows
+drives are mounted through 9p, which does not preserve the executable bit and is
+slow for a 460 MB extraction:
+
+```bash
+sudo apt-get update && sudo apt-get install -y python3 python3-venv gcc libc6-dev openssl
+mkdir -p ~/vapt && cd ~/vapt     # clone the repo here too, or copy poc/ in
+```
+
+Then follow this document from step 1. Nothing else changes.
+
+**If you must stay on Windows**, the useful subset is steps 2–3 plus the two
+scripts that only read files — `poc/11` (PoCKit's endpoint and credential
+constants, F-15) and `poc/12` (bytecode of a plain `.pyc`, F-01/F-02) — with
+**Python 3.13.x**, because the payload is 3.13 bytecode and a 3.14 interpreter
+may not unmarshal it:
+
+```powershell
+py -3.13 poc\11-analyse-pockit-endpoint.py C:\path\to\signal-pyarmor-linux-x86_64_extracted
+py -3.13 poc\12-disassemble-pyc.py pockit\agents\shared_tools.pyc run_shell
+```
+
+Neither script imports product code, so you do **not** need `poc/01`, `poc/02`
+or the merged tree for them. Skip steps 4–5 entirely.
+
+Two Windows-specific notes for step 3 and `poc/01`:
+
+* On Windows the paths inside this project's defaults (`/tmp/vapt/…`) are
+  **not** temporary directories — an absolute POSIX path becomes `\tmp\vapt\…`
+  on the current drive. Always set `MERGED_OUT` and `SIGNAL_EXTRACT` to real
+  Windows paths.
+* `os.symlink` on Windows requires Developer Mode or elevation. `poc/01` tries
+  symlink → hard link → copy and says which it used, so on NTFS either set
+  `MERGE_LINK=hardlink` (no privileges needed, no extra disk) or accept
+  `MERGE_LINK=copy` (about 408 MB). Both were verified to produce a tree that
+  behaves identically.
+
+---
+
 ## 0. Prerequisites
 
 ```bash
@@ -24,7 +83,8 @@ sudo apt-get install -y git python3 python3-venv gcc libc6-dev openssl   # Debia
 ```
 
 About 1.5 GB of free disk: the binary is 116 MB, the extraction 460 MB, and the
-merged tree is symlinks (almost free).
+merged tree is made of links (almost free — see `MERGE_LINK` in step 4 if your
+filesystem refuses them).
 
 ## 1. Obtain the target and verify it
 
@@ -104,7 +164,9 @@ EOF
 PyInstaller splits a package across two locations: extension modules (`.so`) stay
 at the CArchive root, pure-Python modules live in the extracted PYZ. Both halves
 must be visible under one directory or `numpy`, `faiss` and `tiktoken` cannot
-import. `poc/01` merges them **recursively**, writing only symlinks:
+import. `poc/01` merges them **recursively**, leaving the extraction untouched
+and exposing each leaf by symlink, hard link or copy — whichever your filesystem
+allows (`MERGE_LINK=symlink|hardlink|copy` forces one):
 
 ```bash
 cd "$WORK"
@@ -112,7 +174,13 @@ SIGNAL_EXTRACT="$WORK/signal-pyarmor-linux-x86_64_extracted" \
 MERGED_OUT="$WORK/merged" \
 python3 /path/to/VAPT/poc/01-build-merged-tree.py
 # merged entries at top level: 318
+# leaf strategy: symlink
 ```
+
+The output directory's parents are created if missing, and `SIGNAL_EXTRACT` is
+validated up front. On Windows, set both variables to Windows paths — the
+`/tmp/vapt` defaults are POSIX paths and silently become `\tmp\vapt` on the
+current drive.
 
 One level of merging is not enough — `numpy/_core` exists on both sides, and a
 non-recursive merge hides `numpy`'s extension modules.

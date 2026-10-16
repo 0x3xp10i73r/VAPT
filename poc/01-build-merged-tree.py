@@ -7,8 +7,19 @@ Both halves must be visible under one directory for the package to import.
 
 The merge is therefore RECURSIVE: whenever a directory name exists in both
 trees, a real directory is created in OUT and both sides are merged into it.
-Nothing is ever written into the source tree - every leaf in OUT is a symlink
+Nothing is ever written into the source tree - every leaf in OUT is a link
 pointing back at the extraction.
+
+Leaf strategy, in order of preference: symlink, then hard link, then copy.
+Symlinks are cheapest and are the default on POSIX; hard links cost no space
+and need no privileges on NTFS; a copy is the last resort for filesystems that
+support neither (or when MERGE_LINK=copy is set). MERGE_LINK=hardlink forces
+the second strategy. The strategy used is printed at the end.
+
+Environment:
+    SIGNAL_EXTRACT  extraction directory (default /tmp/vapt/signal-pyarmor-linux-x86_64_extracted)
+    MERGED_OUT      output directory     (default /tmp/vapt/merged)
+    MERGE_LINK      symlink | hardlink | copy
 """
 import os
 import shutil
@@ -18,6 +29,33 @@ X = Path(os.environ.get("SIGNAL_EXTRACT",
     "/tmp/vapt/signal-pyarmor-linux-x86_64_extracted"))
 PYZ = X / "PYZ.pyz_extracted"
 OUT = Path(os.environ.get("MERGED_OUT", "/tmp/vapt/merged"))
+LINK_MODE = os.environ.get("MERGE_LINK", "").strip().lower() or None
+USED = set()
+
+
+def expose(src, dst):
+    """Make `src` visible at `dst` using the best available strategy."""
+    if LINK_MODE in (None, "symlink"):
+        try:
+            os.symlink(src, dst)
+            USED.add("symlink")
+            return
+        except (OSError, NotImplementedError) as exc:
+            if LINK_MODE == "symlink":
+                raise SystemExit(f"symlink refused by the filesystem: {exc}")
+    if LINK_MODE in (None, "hardlink"):
+        try:
+            os.link(src, dst)
+            USED.add("hardlink")
+            return
+        except (OSError, NotImplementedError) as exc:
+            if LINK_MODE == "hardlink":
+                raise SystemExit(f"hard link refused by the filesystem: {exc}")
+    if src.is_dir():
+        shutil.copytree(src, dst, symlinks=True)
+    else:
+        shutil.copy2(src, dst)
+    USED.add("copy")
 
 
 def merge(src_a, src_b, dst):
@@ -32,12 +70,16 @@ def merge(src_a, src_b, dst):
         else:
             leaf = a if a.exists() else b    # otherwise prefer whichever exists
             target = (a if a.exists() else b)
-            os.symlink(target, dst / name)
+            expose(target, dst / name)
 
+
+if not X.is_dir():
+    raise SystemExit(f"extraction directory not found: {X}\n"
+                     "Set SIGNAL_EXTRACT to the directory produced by pyinstxtractor-ng.")
 
 if OUT.exists():
     shutil.rmtree(OUT)
-OUT.mkdir()
+OUT.mkdir(parents=True, exist_ok=True)       # mkdir -p: OUT's parent may not exist
 
 # The CArchive root also contains PYZ.pyz itself and the extracted PYZ tree;
 # skip the latter (it is layered in explicitly) but keep everything else.
@@ -47,16 +89,17 @@ for e in root_names:
     if e.is_dir() and src_b.is_dir():
         merge(e, src_b, OUT / e.name)
     else:
-        os.symlink(e, OUT / e.name)
+        expose(e, OUT / e.name)
 
 # PYZ-only entries (no counterpart at the CArchive root)
 have = {e.name for e in X.iterdir()}
 for e in sorted(PYZ.iterdir()):
     if e.name in have and e.name != "PYZ.pyz_extracted":
         continue
-    os.symlink(e, OUT / e.name)
+    expose(e, OUT / e.name)
 
 print(f"merged entries at top level: {len(list(OUT.iterdir()))}")
+print(f"leaf strategy: {', '.join(sorted(USED)) or 'none'}")
 for probe in ("numpy/_core", "numpy/_core/_exceptions.pyc", "numpy/__init__.pyc", "faiss", "tiktoken"):
     p = OUT / probe
     if p.is_dir():
