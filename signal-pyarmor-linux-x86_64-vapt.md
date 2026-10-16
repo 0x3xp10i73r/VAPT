@@ -12,7 +12,9 @@
 
 **Assessment date:** 16 October 2026
 
-**Revision 3 — 16 October 2026 (current).** Adds findings **F-15** (enabling `--poc-kit` overrides the operator's BYO LLM configuration and its "isolated Docker" guarantee is a `PATH` check) and **F-16** (analysed source, including credential-like literals, is transmitted verbatim with no redaction and no egress reporting), both with executed proofs. Also closes most of the previous "no end-to-end scan" gap: the full pipeline was driven to completion against a local endpoint, which is how F-15 and F-16 were observed.
+**Revision 4 — 16 October 2026 (current).** Verification pass over the reproduction material. **F-06's evidence was extended**: with the tokenizer cache seeded, *all seven* agents' requests — five `/v1/chat/completions` and two `/v1/embeddings` — reach the untrusted endpoint, not just the five chat agents (the earlier five-request capture was a side effect of F-05). §9 gap 10 was corrected: it had claimed nine of the 62 protected modules fail to import, whereas the executed evidence shows **62/62 import** after the namespace-marker repair, with the residual limitation being the encrypted function bodies. Appendix A gained the mandatory tokenizer-seeding step (5a) and now shows the correct system-`python3` invocation for `poc/01`. A new runbook, **`poc/README.md`**, documents every script's invocation, required environment and expected output; all of its commands were re-executed from a clean directory when it was written.
+
+**Revision 3 — 16 October 2026.** Adds findings **F-15** (enabling `--poc-kit` overrides the operator's BYO LLM configuration and its "isolated Docker" guarantee is a `PATH` check) and **F-16** (analysed source, including credential-like literals, is transmitted verbatim with no redaction and no egress reporting), both with executed proofs. Also closes most of the previous "no end-to-end scan" gap: the full pipeline was driven to completion against a local endpoint, which is how F-15 and F-16 were observed.
 
 **Revision 2 — 16 October 2026.** Added, for **every** finding, an executed **proof of concept** and a numbered **"Steps to reproduce manually"** procedure; deepened the static analysis of the PyArmor-protected modules (F-03); added findings **F-11 … F-14**. The runnable PoC scripts referenced throughout are committed under `poc/` in this repository.
 
@@ -61,7 +63,7 @@ Observed product tree inside the binary: `agents/`, `data/`, `prompts/`, `scans/
 9. **Executed proof of concept (rev 2)** — the shipped PoCKit tool code and workspace helper were imported from the extraction and invoked (`poc/05`, `poc/06`), producing observed host-side effects rather than inferred ones.
 10. **Differential TLS test (rev 2)** — a local HTTPS endpoint presenting a self-signed certificate (`poc/07`) was used to compare `--llm-ssl-verify true` against `false`, confirming the option's effect end-to-end.
 11. **Process-argument inspection (rev 2)** — a live invocation carrying a canary credential was inspected through `/proc/<pid>/cmdline`.
-12. **Harness repair (rev 2)** — 17 zero-length PYZ namespace markers were corrected and the two-tree merge was made recursive, restoring `numpy` / `faiss` / `tiktoken` imports so that no finding rests on a broken reconstruction (see `poc/01`).
+12. **Harness repair (rev 2)** — 17 header-only (16-byte) PYZ namespace markers were removed and the two-tree merge was made recursive, restoring `numpy` / `faiss` / `tiktoken` imports so that no finding rests on a broken reconstruction (see `poc/01`).
 13. **Tokenizer gate removal (rev 3)** — the scanner aborts before any LLM call unless the `cl100k_base` vocabulary can be fetched from `openaipublic.blob.core.windows.net` (F-05). The vendor's *hash-pinned* copy (`sha256 223921b7…`) was obtained, verified byte-for-byte against the constant compiled into the bundled `tiktoken_ext/openai_public.pyc`, and seeded into `TIKTOKEN_CACHE_DIR`. This unblocked the pipeline for assessment purposes. **It is not an available workaround for a customer**: the cache path is undocumented and the initial fetch is still mandatory in a clean environment.
 14. **Full pipeline run (rev 3)** — `--import-results`, dataflow, oversight, synthesis and the PoCKit hand-off were executed end-to-end against a local OpenAI-compatible endpoint and a crafted import file (exit 0). This produced the payload evidence for F-16 and, together with a stub `docker` on `PATH` plus `ANTHROPIC_API_KEY`, the PoCKit observations for F-15.
 15. **PoCKit endpoint determination (rev 3)** — `pockit` is the one package shipped unobfuscated (33 plain `.pyc`), so its orchestrator, agent prompts and constants were read directly; the documented `POCKIT_LLM_BASE_URL` override was then tested against the running CLI and shown not to take effect (`poc/11`).
@@ -521,25 +523,27 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
       {"agent": "singlefilescan-agent", "status": "ok", "error_code": null}, …}
 
   ################ requests accepted by the untrusted endpoint ################
-  5 poc-f06-requests.log
+  7 poc-f06-requests.log        # with the tokenizer cache seeded — see F-05
     [0] POST /v1/chat/completions auth=Bearer CANARY_KEY_123
     [1] POST /v1/chat/completions auth=Bearer CANARY_KEY_123
     [2] POST /v1/chat/completions auth=Bearer CANARY_KEY_123
     [3] POST /v1/chat/completions auth=Bearer CANARY_KEY_123
     [4] POST /v1/chat/completions auth=Bearer CANARY_KEY_123
+    [5] POST /v1/embeddings      auth=Bearer CANARY_KEY_123
+    [6] POST /v1/embeddings      auth=Bearer CANARY_KEY_123
   ```
 
-  With verification enabled, an endpoint presenting an untrusted certificate is refused and all agents fail. With it disabled, **five chat agents succeed against the same untrusted endpoint**, and the endpoint — which a MITM could equally have supplied — records the API key and the full request bodies.
+  With verification enabled, an endpoint presenting an untrusted certificate is refused and **all seven** agents fail (`error_code: 111`), with an empty request log. With it disabled, **every agent that carries material — five chat agents and both embedding agents — succeeds against the same untrusted endpoint**, and the endpoint, which a MITM could equally have supplied, records the API key and the full request bodies. The two embedding agents still report `error_code: 63` in the run summary because the minimal PoC endpoint answers every path with a chat-completion body, which they cannot parse; the *request* is nevertheless delivered and logged, which is what matters here. In an environment without a seeded tokenizer cache only five requests arrive, because the two embedding agents then fail on the `cl100k_base` fetch (F-05) **before** dialling — so how many requests reach the endpoint depends on F-05, not on the TLS setting.
 
 - **Steps to reproduce manually.**
   1. Generate a self-signed certificate:
      `openssl req -x509 -newkey rsa:2048 -nodes -keyout poc-f06-selfsigned.key -out poc-f06-selfsigned.pem -days 2 -subj "/CN=poc-f06-untrusted"`
   2. Start the logging endpoint: `python3 poc/07-poc-f06-tls-endpoint.py 8443 poc-f06-requests.log`
-  3. Point the tool at it (`uri = https://127.0.0.1:8443/v1` in `.signal`), then run:
+  3. Point the tool at it (`uri = https://127.0.0.1:8443/v1` in `.signal`; in `byo` mode the config must also carry a `model` for each of the seven agents, otherwise the run exits 117 before contacting anything), then run:
      `./signal-pyarmor-linux-x86_64 --config ./.signal --llm-ssl-verify true --llm-timeout 10 --check-llm-json true ./target`
      → expect 7/7 agents failed with code 111 and an empty request log.
-  4. Run the identical command with `--llm-ssl-verify false`
-     → expect 5 chat agents `"status": "ok"` and five `POST /v1/chat/completions` lines in the log, each carrying `Authorization: Bearer …`.
+  4. Run the identical command with `--llm-ssl-verify false`, with `TIKTOKEN_CACHE_DIR` pointing at a seeded cache (F-05)
+     → expect the five chat agents `"status": "ok"` and seven `POST` lines in the log — five `/v1/chat/completions` and two `/v1/embeddings` — each carrying `Authorization: Bearer …`. Without the seeded cache the embedding agents fail before dialling and only the five chat lines appear.
   5. Inspect `poc-f06-requests.log` and confirm the request bodies contain prompt content — i.e. that the insecure channel is the one that carries the analysis material.
 
 - **Impact.** Man-in-the-middle exposure of analysed source code and of the API key in the `Authorization` header (observed in the `Bearer` header captured at the untrusted endpoint).
@@ -1165,8 +1169,8 @@ Recorded so that the assessment is balanced and so these are not regressed:
 7. **`--dataflow`, `--synthesis` and the `--poc-kit` hand-off were exercised** (see gap 2), but with a mock model returning canned responses, so their *decision quality* was not assessed — only their control flow, network behaviour and file/command handling. `--llm-prompt-caching` and the SCA/`--crypto` paths were not exercised at all, and `git_diff_*` options were not tested.
 8. **`cryptography` reachability was assessed by inspection, not instrumentation.** Whether the CLI ever drives X.509 path building, PKCS#7 decryption or name-constraint checking through the Python API (F-12) was not proven either way; the conclusion rests on which APIs the bundled product modules reference.
 9. **Vendor infrastructure was out of scope.** `llm.labs.blackduck.com`, `llm.core.blackduck.com` and `poc.polaris.blackduck.com` were identified but not probed. Testing them requires separate written authorisation.
-10. **The reconstruction harness itself is a limitation.** Nine of the 62 product modules could not be imported in the rebuilt tree because a handful of PYZ entries do not survive third-party extraction intact; those modules were therefore read from the archive as raw bytecode rather than executed. This affects breadth of dynamic coverage only — every finding in this revision rests on the raw binary, the shipped files, or modules that did load. Binaries and artefacts are not committed to the repository. The 116 MB binary, the 471 MB extraction and the reconstructed analysis environment live outside version control; the reproduction commands are in Appendix A and the PoC scripts are in `poc/`.
-11. **One reconstruction caveat, disclosed for accuracy.** The assessment environment is a *reconstruction* of the frozen runtime, not the frozen runtime itself. Three harness defects found and fixed during rev 2 (a mis-declared `PyRun_SimpleFileExFlags` signature that corrupted parsing, 17 zero-length PYZ namespace markers, and a one-level-only directory merge that hid extension modules) had earlier produced misleading `EOFError` results. All findings in this revision were re-verified after the repair; the raw binary was always run unmodified for the dynamic tests.
+10. **The reconstruction harness itself is a limitation.** Every dynamic result here was produced with the binary's own `libpython3.13`, driven by a small `dlopen` host rather than by the frozen entry point, so product modules were exercised outside their packaged bootstrap. Where a behaviour was observed both ways — tool registration (F-01), the PoCKit Docker gate and credential handling (F-15), and prompt composition (F-16) — the packaged binary and the harness agree; but the harness is a reconstruction, not the shipped execution environment. After the 17 header-only (16-byte) namespace markers were deleted, **all 62** of the 62 protected modules import and the metadata harvest is complete (F-03), so no product module was skipped for that reason; the residual limitation is the encrypted function bodies (gap 1). Binaries and artefacts are not committed to the repository — the 116 MB binary, the 460 MB extraction and the reconstructed analysis environment live outside version control; the reproduction commands are in Appendix A, the runnable scripts with verified invocation and expected output are in `poc/README.md`, and the PoC sources are in `poc/`.
+11. **One reconstruction caveat, disclosed for accuracy.** The assessment environment is a *reconstruction* of the frozen runtime, not the frozen runtime itself. Three harness defects found and fixed during rev 2 (a mis-declared `PyRun_SimpleFileExFlags` signature that corrupted parsing, 17 header-only (16-byte) PYZ namespace markers, and a one-level-only directory merge that hid extension modules) had earlier produced misleading `EOFError` results. All findings in this revision were re-verified after the repair; the raw binary was always run unmodified for the dynamic tests.
 
 ---
 
@@ -1213,13 +1217,30 @@ pyinstxtractor-ng signal-pyarmor-linux-x86_64          # 485 entries; PYZ -> 6,3
 
 # ------------------- 4. Repair the reconstruction, then build a CPython 3.13 host
 gcc -o /tmp/vapt/py313host poc/02-rebuild-cpython-host.c -ldl
-SIGNAL_EXTRACT=$EX python3.13 /tmp/vapt/py313host poc/01-build-merged-tree.py
-#   -> "numpy/_core: dir with 31 entries" and friends; no symlinks are ever created
-#      inside the source tree.
+SIGNAL_EXTRACT=$EX python3 poc/01-build-merged-tree.py
+#   -> "merged entries at top level: 318"; symlinks in the merged tree point back
+#      at the extraction, so the source tree is never touched.
+#   Run this with the SYSTEM python3, not with py313host, and keep PYTHONHOME
+#   unset for it. Also delete the 17 header-only (16-byte) namespace markers first
+#   (a header-only X.pyc next to a real X/ directory makes `import X` fail):
+#     find $EX/PYZ.pyz_extracted -name '*.pyc' -size -33c   # review, then remove
+#        those that have a same-named directory beside them
 
 export PYTHONHOME=/tmp/vapt/pyhome                      # stdlib assembled from the bundle
 export PYTHONPATH=/tmp/vapt/merged:$EX/base_library.zip # NOTE: extraction root LAST
 run() { /tmp/vapt/py313host "$@"; }
+
+# --------- 5a. Seed the tokenizer cache (F-05 — required before ANY real scan)
+# tiktoken fetches cl100k_base.tiktoken at first use and verifies the contents
+# against a compiled-in digest, so an empty or hand-written placeholder is
+# rejected. Populate the cache on a host that has egress, then copy it over:
+#   mkdir -p tkcache/cached && TIKTOKEN_CACHE_DIR=$PWD/tkcache/cached python3 -c \
+#       "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+#   sha256sum tkcache/cached/*   # cache file name = sha1(blob url):
+#   # 223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7
+#   #   …/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+# Without it every scan exits 63 with
+#   "...openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken..."
 
 # --------------------------------------------------- 5. Runtime version slate (F-04, F-09, F-11, F-12)
 run poc/08-collect-runtime-versions.py
@@ -1261,9 +1282,12 @@ python3 poc/07-poc-f06-tls-endpoint.py 8443 poc-f06-requests.log &
 # point .signal at uri = https://127.0.0.1:8443/v1, then:
 ./signal-pyarmor-linux-x86_64 --config ./.signal --llm-ssl-verify true  --llm-timeout 10 --check-llm-json true ./poc-target
 #   -> 7/7 agents failed, error_code 111 "Connection error."; request log empty
-./signal-pyarmor-linux-x86_64 --config ./.signal --llm-ssl-verify false --llm-timeout 10 --check-llm-json true ./poc-target
-#   -> 5 chat agents "ok"; the untrusted endpoint logged:
+TIKTOKEN_CACHE_DIR=<seeded-cache> ./signal-pyarmor-linux-x86_64 --config ./.signal \
+    --llm-ssl-verify false --llm-timeout 10 --check-llm-json true ./poc-target
+#   -> 5 chat agents "ok"; the untrusted endpoint logged 7 requests:
 #      POST /v1/chat/completions  auth=Bearer CANARY_KEY_123   (x5)
+#      POST /v1/embeddings       auth=Bearer CANARY_KEY_123   (x2)
+#   without the seeded cache only the five chat requests arrive (see F-05)
 
 # ------------------------------------------------------- 10. F-07  argv exposure
 ./signal-pyarmor-linux-x86_64 --llm-mode byo --llm-uri http://10.255.255.1:9/v1 \
@@ -1291,11 +1315,20 @@ ls $EX/pyarmor_runtime_008246/                         # 4 platform runtimes in 
 find $EX/tests -name '*.py' | wc -l                    # 79
 ```
 
+The `poc/` scripts are the runnable form of these steps. Their per-script
+invocation, required environment (`PYTHONHOME` for the `py313host` scripts and
+*not* for the system-`python3` ones), and the output each one is expected to
+produce are documented in **`poc/README.md`**; every command there was re-run
+from a clean directory when that file was written.
+
 ## Appendix B — CLI option inventory (79 options)
 
 `--agent-limit`, `--auto-accept-token-truncation`, `--aws-bearer-token`, `--aws-bedrock-region`, `--cache-database`, `--cache-file`, `--caching`, `--check-llm`, `--check-llm-json`, `--checkpoint-file`, `--config`, `--crypto`, `--cvss-threshold`, `--dataflow`, `--disable-default`, `--display-extensions`, `--error-log-file`, `--exclude-paths`, `--export-results`, `--extra-extensions`, `--gcp-project`, `--gcp-region`, `--gcp-service-account`, `--git-diff`, `--git-diff-dir`, `--git-diff-generate-patch`, `--git-diff-reference-branch`, `--git-diff-untracked`, `--help`, `--ignore-test-files`, `--import-results`, `--include-paths`, `--intra-file-shortcircuit`, `--large-code-base-size`, `--llm-api-version`, `--llm-ca-bundle`, `--llm-dataflow-agent-{api-version,key,model,timeout,uri}`, `--llm-exploitation-agent-{api-version,key,model,timeout,uri}`, `--llm-key`, `--llm-limit`, `--llm-mergekey-embed-agent-{api-version,key,model,timeout,uri}`, `--llm-mode`, `--llm-model`, `--llm-model-agent`, `--llm-oversight-agent-*`, `--llm-oversight-embed-agent-*`, `--llm-prompt-caching`, `--llm-sca-agent-{api-version,key,model,timeout,uri}`, `--llm-singlefilescan-agent-*`, `--llm-ssl-verify`, `--llm-tag`, `--llm-timeout`, `--llm-uri`, `--log-file`, `--log-level`, `--misra`, `--model-completion-limit`, `--oversight`, `--oversight-cve-detection`, `--oversight-embedding`, `--oversight-rules-file`, `--pipeline`, `--poc-kit`, `--poc-kit-log-file`, `--poc-kit-report-dir`, `--prioritization`, `--report-file`, `--result-limit`, `--result-preview`, `--show-triage`, `--skip-estimates`, `--skip-generated-files`, `--synthesis`, `--thinking-budget`, `--version`
 
 ## Appendix C — PoC index (committed under `poc/`)
+
+Per-script invocation, required environment and expected output are in
+**`poc/README.md`**.
 
 | Script | Finding | What it proves |
 |---|---|---|

