@@ -167,6 +167,19 @@ sha256sum signal-pyarmor-linux-x86_64
 
 **Stop here if the hash does not match** — every result below depends on it.
 
+Already have a copy somewhere but not sure where? Search for it — this also
+covers the Windows drives under WSL:
+
+```bash
+find "$HOME" /mnt /tmp -maxdepth 6 -name 'signal-pyarmor-linux-x86_64*' -size +50M 2>/dev/null
+```
+
+`poc/00-setup.sh` looks for the binary in the work directory, the current
+directory, the repository root and `$HOME`, in that order, so with it in place
+you can run the script from anywhere without `--binary`. If you pass `--binary`,
+a relative path is resolved against the **current directory** — use an absolute
+path when in doubt.
+
 ## 2. Unpack the PyInstaller archive
 
 ```bash

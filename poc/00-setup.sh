@@ -35,23 +35,48 @@ WORK="$(cd "$WORK" && pwd)"          # absolute, so later `cd`s cannot change it
 cd "$WORK"
 
 # ---------------------------------------------------------------- 1. the binary
-if [ -z "$BINARY" ]; then
-    for cand in "$WORK/signal-pyarmor-linux-x86_64" "./signal-pyarmor-linux-x86_64" \
-                "$POC/../signal-pyarmor-linux-x86_64"; do
+REPO_ROOT="$(cd "$POC/.." && pwd)"
+CANDIDATES=(
+    "$WORK/signal-pyarmor-linux-x86_64"
+    "$PWD/signal-pyarmor-linux-x86_64"
+    "$REPO_ROOT/signal-pyarmor-linux-x86_64"
+    "$HOME/signal-pyarmor-linux-x86_64"
+    "/tmp/vapt/signal-pyarmor-linux-x86_64"
+)
+
+if [ -n "$BINARY" ]; then
+    if [ ! -f "$BINARY" ]; then
+        echo "binary not found: $BINARY" >&2
+        echo "    current directory: $PWD" >&2
+        echo "    (a relative path is resolved against the current directory," >&2
+        echo "     so use an absolute one if you are not in the right place)" >&2
+        echo >&2
+        echo "Locate a copy you already have — this also searches Windows drives:" >&2
+        echo "    find \"\$HOME\" /mnt /tmp -maxdepth 6 \\" >&2
+        echo "        -name 'signal-pyarmor-linux-x86_64*' -size +50M 2>/dev/null" >&2
+        echo >&2
+        echo "Or re-fetch it (README.md step 1):" >&2
+        echo "    git -C '$REPO_ROOT' fetch origin binary-drop:refs/remotes/origin/binary-drop" >&2
+        echo "    git -C '$REPO_ROOT' show origin/binary-drop:signal-pyarmor-linux-x86_64.part-00 > part-00" >&2
+        echo "    git -C '$REPO_ROOT' show origin/binary-drop:signal-pyarmor-linux-x86_64.part-01 > part-01" >&2
+        echo "    cat part-00 part-01 > '$REPO_ROOT/signal-pyarmor-linux-x86_64'" >&2
+        exit 1
+    fi
+else
+    for cand in "${CANDIDATES[@]}"; do
         [ -f "$cand" ] && { BINARY="$cand"; break; }
     done
 fi
+
 if [ -z "$BINARY" ]; then
-    cat >&2 <<'EOF'
-No binary found. Fetch it first (see README.md step 1), e.g.:
-
-    git fetch origin binary-drop:refs/remotes/origin/binary-drop
-    git show origin/binary-drop:signal-pyarmor-linux-x86_64.part-00 > part-00
-    git show origin/binary-drop:signal-pyarmor-linux-x86_64.part-01 > part-01
-    cat part-00 part-01 > signal-pyarmor-linux-x86_64
-
-then pass it with --binary, or drop it in the work directory.
-EOF
+    echo "No binary found. Searched:" >&2
+    printf '    %s\n' "${CANDIDATES[@]}" >&2
+    echo >&2
+    echo "Pass one explicitly with --binary, or fetch it (README.md step 1):" >&2
+    echo "    git -C '$REPO_ROOT' fetch origin binary-drop:refs/remotes/origin/binary-drop" >&2
+    echo "    git -C '$REPO_ROOT' show origin/binary-drop:signal-pyarmor-linux-x86_64.part-00 > part-00" >&2
+    echo "    git -C '$REPO_ROOT' show origin/binary-drop:signal-pyarmor-linux-x86_64.part-01 > part-01" >&2
+    echo "    cat part-00 part-01 > '$REPO_ROOT/signal-pyarmor-linux-x86_64'" >&2
     exit 1
 fi
 
