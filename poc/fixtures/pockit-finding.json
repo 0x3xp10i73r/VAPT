@@ -1,0 +1,43 @@
+[
+  {
+    "rule_id": "CWE-78-command-injection",
+    "baseline_state": "TP",
+    "level": "error",
+    "message": {
+      "text": "Command injection: user-controlled input reaches a shell."
+    },
+    "properties": {
+      "cvssv3BaseVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "cvssv3BaseScore": 9.8,
+      "confidence": "HIGH",
+      "requiresDataflow": true,
+      "cwe": 78,
+      "impact": "Remote command execution on the analysis host",
+      "exploitable": true,
+      "exploitable_dataflow": true,
+      "dataflowSource": "request.args",
+      "dataflowOrigin": "hello.py:3",
+      "auth_required": false,
+      "mergeKey": "poc-e2e-0001"
+    },
+    "locations": [
+      {
+        "physicalLocation": {
+          "artifactLocation": {
+            "uri": "hello.py"
+          },
+          "region": {
+            "startLine": 3,
+            "endLine": 3
+          }
+        },
+        "message": {
+          "text": "Sink: subprocess.check_output(..., shell=True)"
+        }
+      }
+    ],
+    "fixes": [],
+    "guid": "11111111-2222-3333-4444-555555555555",
+    "rank": 9.8
+  }
+]

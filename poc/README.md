@@ -161,6 +161,45 @@ it exits non-zero if any PoC fails. The four findings that need the real binary
 and a listening endpoint (F-05, F-06, F-15, F-16) are listed at the end of its
 output and covered below.
 
+### Everything, in one command
+
+`poc/run-static.sh` stops at the offline PoCs. `poc/run-all.sh` runs those plus
+the four that need the real binary and a listening endpoint, in one serial pass,
+starting and stopping every listener itself:
+
+```bash
+bash poc/run-all.sh                              # work dir + binary autodetected
+bash poc/run-all.sh --skip-dynamic               # offline PoCs only
+bash poc/run-all.sh --work ~/VAPT --binary ~/VAPT/poc/signal-pyarmor-linux-x86_64
+```
+
+Verified on 16 October 2026 in a fresh clone of this repository, binary in
+`poc/`, tokenizer cache pre-seeded (see *The tokenizer dependency* below):
+
+```
+  ok    setup   extraction, merged tree and host are in /tmp/allrun4/VAPT
+  ok    F-01…15 the nine offline PoCs reproduced
+  ok    F-05    tokenizer cache ready at /tmp/allrun4/VAPT/tkcache/cached
+  ok    F-05    with an empty cache the run cannot proceed: embedding agents fail with '…blob.core.windows.net/encodings/cl100k_base.tiktoken'
+  ok    F-15    with no docker binary the PoCKit hand-off refuses outright
+  ok    F-15    a 3-line stub named 'docker' satisfies the gate (1 stub invocation(s) logged)
+  ok    F-15    a config-file key is not passed through: PoCKit demands ANTHROPIC_API_KEY
+  ok    F-15    the same config with --llm-key proceeds, and PoCKit sends that key to POST /v1/v1/messages?beta=true
+  ok    F-16    the planted credential literal appears in 2 of 23 captured prompts (Identified 1 files for analysis) — no redaction
+  ok    F-16    a git-ignored directory reports 'Identified 0 files for analysis' although it holds .py files — ignored code is never analysed
+  ok    F-06    verify=true: 0 requests reached it; verify=false: 7, carrying Bearer CANARY_KEY_123
+  reproduced: 11   failed: 0   skipped: 0
+```
+
+It exits non-zero if any check fails, and it writes the raw evidence for each
+phase into the work directory (`poc-f05.out`, `poc-f15a…d.out`,
+`poc-f16-capture.log`, `poc-f06-requests.log`, `poc-docker-stub.log`). Phase 3 is
+the only step that wants network access — it fetches the tiktoken tokenizer. If
+that fetch is blocked the phase fails, reports that it **is** F-05, skips phases
+4–7 and exits 1; pre-seed `tkcache/cached` (below) to run the rest offline. Phase
+5's first stage is skipped when a real `docker` is installed, because then the
+"no docker" case cannot be shown.
+
 ## 1. Obtain the target and verify it
 
 The binary is stored in this repository as two parts on the `binary-drop` branch
@@ -480,27 +519,34 @@ bodies are ~105 bytes; this PoC is about the *channel*. F-16 covers the payload.
 
 **F-16 — the scan sends source verbatim, credentials included.**
 
+The single-file analysis stage puts each file's text straight into the prompt, so
+a scan imports nothing and is pointed at a directory of source. Two conditions
+have to hold for the request to leave the machine: the file has to be *discovered*
+(see the `.gitignore` caveat below) and the endpoint must not already have a
+cached answer for that exact prompt — the runner passes `--caching false` for
+that reason.
+
 ```bash
 cd "$WORK"
-printf 'API_KEY = "AKIAIOSFODNN7EXAMPLE"\nDB_PASSWORD = "sup3r-s3cret-db-pass"\n' \
-  > poc-target/secret_sample.py
+mkdir -p poc-triage && printf 'API_KEY = "AKIAIOSFODNN7EXAMPLE"\nDB_PASSWORD = "sup3r-s3cret-db-pass"\n' \
+  > poc-triage/secret_sample.py
 
 python3 $POC/13-capture-llm-payload.py 8899 "$WORK/poc-f16-payload.log"   # second shell
 
 HOME=$WORK/home TIKTOKEN_CACHE_DIR="$WORK/tkcache/cached" \
-  ./signal-pyarmor-linux-x86_64 ./poc-target --config ./poc-byo.signal \
+  ./signal-pyarmor-linux-x86_64 ./poc-triage --config ./poc-byo.signal \
   --llm-mode byo --llm-uri http://127.0.0.1:8899/v1 --llm-key CANARY_KEY_123 \
-  --agent-limit 1          # exit 0
+  --caching false                  # exit 0; "Identified 1 files for analysis"
 
-grep -c 'BODY (' poc-f16-payload.log                      # requests captured
-grep -c AKIAIOSFODNN7EXAMPLE poc-f16-payload.log           # non-zero
-grep -c 'Authorization: <redacted>' poc-f16-payload.log    # every request
+grep -c 'BODY (' poc-f16-payload.log                       # 23–25 requests captured
+grep -c AKIAIOSFODNN7EXAMPLE poc-f16-payload.log            # non-zero: the file text, once per attempt
+grep -o 'redacted sha256=[0-9a-f]*' poc-f16-payload.log | sort -u
+# one fingerprint — sha256("Bearer CANARY_KEY_123")[:12] = 6424c7a76ff3 — which is how
+# credential headers are logged: provable, without storing the credential
 ```
 
-Observed in the assessment's run: exit 0, **10 of 129** requests carried the
-planted literals. Repeating it from a clean directory with `--agent-limit 1`
-gave exit 0 and **2 of 27** — the counts scale with how much the run does, the
-finding does not. The prompt text is the point:
+The counts scale with how much the run does; the finding does not. The prompt
+text is the point:
 
 ```
 ## SOURCE CODE
@@ -510,9 +556,35 @@ finding does not. The prompt text is the point:
 ```
 ```
 
+A `.gitignore` caveat belongs to this finding, because it decides what is
+analysed at all. File discovery honours git's ignore file, and it says so only
+obliquely — the same scanner, given a directory that git ignores, reports:
+
+```bash
+grep -rl . --include='*.py' poc-target        # files are there
+HOME=$WORK/home TIKTOKEN_CACHE_DIR="$WORK/tkcache/cached" \
+  ./signal-pyarmor-linux-x86_64 ./poc-target --config ./poc-byo.signal \
+  --llm-mode byo --llm-uri http://127.0.0.1:8899/v1 --llm-key CANARY_KEY_123 --caching false
+# WARNING: scans.sast : No files found for analysis in ./poc-target
+# INFO   : scans.sast : Identified 0 files for analysis
+```
+
+So a `poc-target/` you created by hand inside this repository is skipped, while
+`poc-triage/` next to it is not. The runner demonstrates both cases, and it is
+why the runner's own scratch directories are named `poc-triage/` (scanned) and
+`poc-target/` (deliberately ignored).
+
 The opposite asymmetry is worth checking too: the tool's **own** credential is
 redacted in its log (`--llm-key=********`), while the credential literals inside
 the analysed file are not.
+
+`13-capture-llm-payload.py` has one more mode: `--agentic <file>` answers a
+request that advertises the scanner's own `read_file` tool with a tool call for
+that file, which models an endpoint the operator does not fully trust. The
+packaged binary did **not** act on that call in the assessment environment, so
+nothing in the report rests on it; header values are recorded as
+`<redacted sha256=…>` fingerprints either way, which is how `run-all.sh` proves
+that PoCKit sent the command-line key without storing the key.
 
 **F-15 — PoCKit's Docker "isolation" is a `PATH` lookup.**
 
@@ -611,6 +683,15 @@ mandatory for the dynamic PoCs.
   directory, the repository root), so only `PYTHONHOME`/`PYTHONPATH` have to be
   exported for the `py313host` scripts. If the extraction is stale or the markers were not removed, `poc/03` will
   report import failures instead of `62/62`.
+- **Response caching hides requests, not findings.** A scan keeps an LLM response
+  cache (`signal-cache.db` in the working directory); a repeat of an identical
+  prompt is answered locally and never dials out. Every dynamic command in
+  `poc/run-all.sh` therefore passes `--caching false`, so what you count at the
+  endpoint is what the scan actually sent. Delete a stale `signal-cache.db` if
+  you drive the binary by hand.
+- **File discovery honours `.gitignore`** (see F-16): a directory git ignores
+  yields `No files found for analysis` even when it is full of `.py` files. Keep
+  scan targets in directories your checkout does not ignore.
 - **The mock endpoints in `poc/07` and `poc/13` never forward anything** and bind
   `0.0.0.0`; they are throwaway local listeners, so run them on a trusted network
   or bind them to `127.0.0.1` in a shared environment.

