@@ -516,6 +516,48 @@ That is exactly the problem: transport security is optional and silent, in the
 same class as `--llm-ssl-verify false` (F-06), but a different defect — that one
 weakens TLS, this one removes it.
 
+### Just loading — native code, privilege and the packager
+
+`poc/18-check-loading.py` answers the "DLL hijacking" question with measurements
+instead of assumptions: loader search path, setuid/capabilities, the mode of the
+directory PyInstaller extracts into, whether `_PYI_*` spoofing redirects it, and
+which PyInstaller version is embedded.
+
+```bash
+python3 poc/18-check-loading.py
+```
+
+```
+NEEDED   : libdl.so.2, libz.so.1, libpthread.so.0, libc.so.6
+RPATH    : (none)      RUNPATH : (none)
+mode     : 0o755  owner uid 1001        caps : (none)
+PASS - no RPATH/RUNPATH: libraries resolve through the system loader only
+PASS - not setuid/setgid and carries no file capabilities
+extraction: _MEIyeWkTv  mode 0o700  owner uid 1001
+PASS - extraction dir is 0700 (owner-only, 0o700)
+_PYI_APPLICATION_HOME_DIR  rc=0  unchanged
++ _PYI_ARCHIVE_FILE        rc=0  unchanged
++ parent level             rc=0  unchanged
+PASS - spoofed _PYI_* variables do not redirect the loader in this build
+bootloader   : stock PyInstaller 6.20.0
+PASS - embedded PyInstaller 6.20.0 IS inside the affected range
+    loading/privilege reproduced: 4/4
+```
+
+**The result is mostly a negative one, and that matters.** No RPATH, no setuid, no
+capabilities, a `0700` extraction directory with a random name, and spoofed
+`_PYI_*` variables that change nothing when the binary runs as an ordinary user —
+so there is no classic library-planting path here.
+
+The one issue is inherited from the packager: **PyInstaller 6.20.0** is inside
+GHSA-9fxf-4qw3-ghmr (fixed in 6.22.1), which needs a **privileged** instance of
+the executable (setuid/setgid) to matter. Rebuild with 6.22.1+ and never install
+it setuid.
+
+CA bundle note, checked at the same time: 150 roots ship, one of which expired on
+2025-05-12. Expired roots are ignored by path building, so this is hygiene, not a
+finding.
+
 ## 1. Obtain the target and verify it
 
 The binary is stored in this repository as two parts on the `binary-drop` branch

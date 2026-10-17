@@ -12,7 +12,7 @@
 
 **Assessment date:** 16 October 2026
 
-**Revision 9 — 16 October 2026 (current).** Adds focused one-command checks: `poc/16-check-f08.py` for F-08 (build provenance, ELF toolchain and shipped development material, read without executing anything; it also attributes the `.comment` stamp by hashing `.text` - the executable matches PyInstaller 6.20.0's stock Linux bootloader, so the Ubuntu 18.04 line is upstream's build container, not the vendor's), `poc/15-check-f04.py` for F-04 (every OpenSSL build in the archive attributed to its file, the runtime's own version and TLS defaults, and each advisory evaluated against its fixed-version boundary) and `poc/14-check-f01.py` for F-01: it reads the `register_workspace_tools(...)` call site out of every agent module in the shipped archive (three ask for `shell=True`, two get file tools only), disassembles `run_shell` to the exact `subprocess.run(..., shell=True, timeout=120, cwd=...)` call, and then executes the shipped tool with a metacharacter payload on the host, reporting PASS/FAIL per link (`F-01 reproduced: 3/3`). Also: phase 6 of `poc/run-all.sh` now keeps its scan target outside the checkout (a `.gitignore`d target is skipped by the scanner - the very rule F-16 documents), the suite keeps a full transcript at `<work>/poc-run.log` and repeats failed checks in its summary, and the shell scripts are committed executable.
+**Revision 9 — 16 October 2026 (current).** Adds F-17 and `poc/18-check-loading.py` (native-code loading, privilege context and packaging trust), and adds the embedded PyInstaller 6.20.0 to F-12 — it is inside GHSA-9fxf-4qw3-ghmr (< 6.22.1), conditional on a setuid/setgid deployment. Also: Adds focused one-command checks: `poc/16-check-f08.py` for F-08 (build provenance, ELF toolchain and shipped development material, read without executing anything; it also attributes the `.comment` stamp by hashing `.text` - the executable matches PyInstaller 6.20.0's stock Linux bootloader, so the Ubuntu 18.04 line is upstream's build container, not the vendor's), `poc/15-check-f04.py` for F-04 (every OpenSSL build in the archive attributed to its file, the runtime's own version and TLS defaults, and each advisory evaluated against its fixed-version boundary) and `poc/14-check-f01.py` for F-01: it reads the `register_workspace_tools(...)` call site out of every agent module in the shipped archive (three ask for `shell=True`, two get file tools only), disassembles `run_shell` to the exact `subprocess.run(..., shell=True, timeout=120, cwd=...)` call, and then executes the shipped tool with a metacharacter payload on the host, reporting PASS/FAIL per link (`F-01 reproduced: 3/3`). Also: phase 6 of `poc/run-all.sh` now keeps its scan target outside the checkout (a `.gitignore`d target is skipped by the scanner - the very rule F-16 documents), the suite keeps a full transcript at `<work>/poc-run.log` and repeats failed checks in its summary, and the shell scripts are committed executable.
 
 **Revision 8 — 16 October 2026 (current).** **The whole assessment is now one command.** `poc/run-all.sh` runs the offline PoCs and the four dynamic findings (F-05, F-06, F-15, F-16) in a single serial pass, starting and tearing down every listener it needs; it was verified from a fresh clone on 16 October 2026 with **11 checks passing, 0 failures, exit 0** (output transcribed in `poc/README.md`). A first run on a host *with* egress then exposed a defect in the runner itself, now fixed: phase 3 trusted the seeder's exit code, and `poc/seed-tokenizer-cache.py` returned a non-zero code after a fresh, verified fetch (`status: seeded`), so a perfectly good cache was reported as F-05 and the dynamic phases were skipped. The seeder now exits 0 once the cache is present and verified, and the runner decides success by the cache file and its pinned digest, not by any return code. Phase 5's "no docker" stage was also made host-independent: on a machine that *has* docker, the runner re-runs it with a mirror of `PATH` that omits every docker entry and observes the same refusal, which is itself the finding — the gate is a lookup, not a capability check — so the stage is no longer skipped on a typical developer or CI host. The runner
 also keeps its own transcript at `<work>/poc-run.log` and repeats every failed
@@ -134,6 +134,7 @@ Observed product tree inside the binary: `agents/`, `data/`, `prompts/`, `scans/
 | F-14 | The shipped obfuscation matches published malware-evasion detection signatures, and PyArmor is not a security boundary | **Informational** | A05:2021 Security Misconfiguration | CWE-656 | **PoC executed** |
 | F-15 | Enabling PoCKit bypasses the operator's BYO LLM configuration: the agent's traffic is aimed at the vendor gateway (`https://llm.core.blackduck.com/` by default), its credential is resolved by a different rule from every other agent (a config-file key is not passed through, so it falls back to `ANTHROPIC_API_KEY`), and the Docker "isolation" is satisfied by the mere presence of a `docker` binary on `PATH` | **Medium** — CVSS 3.1 **6.5** | A04:2021 Insecure Design / A09:2021 Logging & Monitoring Failures | CWE-441, CWE-693, CWE-778 | **PoC executed** |
 | F-16 | Target source code, including credential-like literals found in it, is transmitted verbatim to the configured LLM endpoint with no redaction or opt-out, and that exposure is not reported to the operator | **Low** — CVSS 3.1 **3.1** | A09:2021 Security Logging and Monitoring Failures / A02:2021 | CWE-200, CWE-212 | **PoC executed** |
+| F-17 | Native-code loading is conventional, but the embedded PyInstaller 6.20.0 is inside GHSA-9fxf-4qw3-ghmr — a privileged-context loader hijack, live only if the binary is deployed setuid/setgid | **Low** — CVSS 3.1 **3.8** | A05:2021 Security Misconfiguration | CWE-427, CWE-829 | **PoC executed** |
 
 ---
 
@@ -790,7 +791,8 @@ The release is distributed with a SHA-256 in the release metadata and no signatu
   | `cryptography` | 48.0.1 | CVE-2026-69247 — PKCS#7 EnvelopedData decryption exposes a Bleichenbacher oracle (CVSS 8.2) | `>= 44.0.0, < 50.0.0` | 50.0.0 | In range |
   | `cryptography` | 48.0.1 | CVE-2026-69248 — wildcard DNS names escape `permittedSubtrees` (CVSS 6.9) | `>= 45.0.0, < 49.0.0` | 49.0.0 | In range |
   | `aiohttp` | 3.14.1 | CVE-2026-34513 / -22815 / -34514…-34517 | `< 3.13.4` | 3.13.4 | Not affected |
-  | `langgraph-sdk` | 0.4.2 | CVE-2026-104873 — resource-scoped auth decorators ignore `actions` (CVSS 7.6) | `>= 0.1.45, < 0.4.4` | 0.4.4 | In range, feature unused |
+  | `langgraph-sdk` | 0.4.2 | CVE-2026-104873 — resource-scoped auth decorators ignore `actions` (CVSS 7.6) | `>= 0.1.45, < 0.4.4` | 0.4.4 | In range, feature
+  | **`PyInstaller`** | **6.20.0** | **GHSA-9fxf-4qw3-ghmr** — spoofed `_PYI_*` environment variables redirect the onefile loader to an attacker-chosen directory (CVSS 7.8, `AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H`) | `>= 6.10.0, < 6.22.1` | **6.22.1** | **In range — conditional on a privileged deployment** | unused |
 
   Bundled `aiohttp` 3.14.1 is **ahead** of the fixes for the named aiohttp advisories — a third-party scanner reports one High and two Medium advisories against 3.14.1 with 3.14.3 as the fixed version, but the specific affected code paths could not be named, so this is recorded as unconfirmed rather than asserted.
 
@@ -799,6 +801,7 @@ The release is distributed with a SHA-256 in the release metadata and no signatu
   - **`cryptography`** is in range for all three advisories. Its practical exposure depends on whether the product drives X.509 path building, PKCS#7 decryption or DNS name-constraint checking through the Python API. The CLI's TLS is handled by the interpreter's `ssl` module and its own OpenSSL (F-04), so the reachable surface appears small. Worth noting a linkage detail from the Debian tracker for CVE-2026-69247: the Bleichenbacher oracle is exploitable only where the underlying library lacks implicit rejection — which is precisely *OpenSSL 3.0*, the build this artefact links. The API is not called by the CLI, but the two weaknesses sit in the same process.
   - **`langgraph-sdk`** is in range for CVE-2026-104873 (disclosed 2 October 2026, after the build). The affected code is the **server-side** `@auth.on.*` decorators of a LangGraph API deployment; Signal is a CLI client and does not operate a LangGraph server, so the vulnerable feature is unused. Reported for completeness and to keep the component list honest.
   - **`aiohttp`** is not affected by the advisories that could be identified.
+  - **`PyInstaller` 6.20.0** is the bootloader that hosts everything else, and it is inside the range of GHSA-9fxf-4qw3-ghmr (published 15 August 2026, fixed 6.22.1). The advisory describes two impacts: loading application contents from a directory of the attacker's choosing — code execution **in privileged context** — and, from 6.14 onward, deleting an arbitrary directory. Both are reached by setting `_PYI_APPLICATION_HOME_DIR` / `_PYI_ARCHIVE_FILE` / `_PYI_PARENT_PROCESS_LEVEL`, which the bootloader passes between its parent and child processes. The precondition is explicit in the advisory: the executable must be one an unprivileged user can run **with elevated privileges** (setuid/setgid on POSIX). As shipped, the binary is `0755`, carries no capabilities and is not setuid, so this is not exploitable in the default install; it becomes live the moment anyone wraps it in a setuid helper or a privileged runner that honours caller-supplied environment. Verified in `poc/18-check-loading.py`: the `.text` hash matches the stock 6.20.0 bootloader, and three spoofing variants against the unprivileged binary are ignored.
 
 - **PoC.** Versions are read from the shipped metadata and the affected ranges are evaluated in code (`poc/08-collect-runtime-versions.py` for the version list):
 
@@ -815,7 +818,7 @@ The release is distributed with a SHA-256 in the release metadata and no signatu
   cryptography-48.0.1.dist-info
   ```
 
-  The ranges are then applied mechanically by `poc/09-check-advisory-ranges.py`, which resolves each component from installed metadata and falls back to the module's own `__version__` when no distribution record was collected (which is the case for `langgraph-sdk` and `aiohttp` — a second, independent confirmation path). Executed result:
+  The PyInstaller version is not in any `.dist-info` record — it is identified from the shipped bootloader itself, by hashing its `.text` section against the stock bootloaders published in PyPI wheels (`poc/18-check-loading.py` section C). The ranges are then applied mechanically by `poc/09-check-advisory-ranges.py`, which resolves each component from installed metadata and falls back to the module's own `__version__` when no distribution record was collected (which is the case for `langgraph-sdk` and `aiohttp` — a second, independent confirmation path). Executed result:
 
   ```
   $ PYTHONHOME=<pyhome> PYTHONPATH=$PWD/merged ./py313host poc/09-check-advisory-ranges.py
@@ -1125,6 +1128,48 @@ The release is distributed with a SHA-256 in the release metadata and no signatu
 
 ---
 
+### F-17 — Native-code loading, privilege context and packaging trust
+
+- **Severity / CVSS:** **Low, 3.8** — `CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:U/C:L/I:L/A:N`
+- **OWASP:** A05:2021 Security Misconfiguration · **CWE:** CWE-427 (Uncontrolled Search Path Element), CWE-829
+
+- **Explanation.** Three questions were tested because they share one root: who decides which native code the process loads, and with what privileges.
+
+  1. **Loader search order.** The executable declares four `NEEDED` libraries (`libdl.so.2`, `libz.so.1`, `libpthread.so.0`, `libc.so.6`) and **no `RPATH`/`RUNPATH`**. Resolution is therefore exactly the system loader's: `LD_LIBRARY_PATH`, then `/etc/ld.so.cache`, then default paths. Nothing in the artefact prefers a private directory.
+  2. **Run-time extraction.** PyInstaller onefile unpacks 77 native objects (`.so` extension modules, `libpython3.13.so.1.0`, `numpy`/`scipy` BLAS) into `$TMPDIR/_MEIxxxxxx`. Measured live: **mode `0700`**, random six-character suffix, owned by the invoking user. Another local user cannot write into it, and cannot pre-create the name.
+  3. **Privilege context.** The file is `0755`, **not setuid/setgid**, with **no file capabilities**, and the product contains no privilege-dropping or root-detection logic — it runs as whoever invokes it. There is no app-level `dlopen`/`ctypes` use at all; the 305 `ctypes` and 23 `CDLL` strings in the archive all belong to stdlib and bundled libraries.
+
+  The residual issue is the packaging toolchain, not the product: the embedded **PyInstaller 6.20.0** is inside GHSA-9fxf-4qw3-ghmr. That advisory is a local-privilege-escalation primitive — spoofed `_PYI_*` variables redirect the loader to an attacker-chosen directory — but it is only reachable when an unprivileged user can run a **privileged** instance of the executable. A `0755` install is unaffected.
+
+- **Evidence / PoC.** `poc/18-check-loading.py` performs all four checks and prints PASS/FAIL each:
+
+  ```
+  $ python3 poc/18-check-loading.py
+  NEEDED   : libdl.so.2, libz.so.1, libpthread.so.0, libc.so.6
+  RPATH    : (none)      RUNPATH : (none)
+  mode     : 0o755  owner uid 1001        caps : (none)
+  PASS - no RPATH/RUNPATH: libraries resolve through the system loader only
+  PASS - not setuid/setgid and carries no file capabilities
+  extraction: _MEIyeWkTv  mode 0o700  owner uid 1001
+  PASS - extraction dir is 0700 (owner-only, 0o700)
+  _PYI_APPLICATION_HOME_DIR  rc=0  unchanged
+  + _PYI_ARCHIVE_FILE        rc=0  unchanged
+  + parent level             rc=0  unchanged
+  PASS - spoofed _PYI_* variables do not redirect the loader in this build
+  .text sha256 : 73a4f7031b47c283106e74bc0a821353…
+  bootloader   : stock PyInstaller 6.20.0
+  PASS - embedded PyInstaller 6.20.0 IS inside the affected range
+      loading/privilege reproduced: 4/4
+  ```
+
+  Manual equivalent: `readelf -dW signal-pyarmor-linux-x86_64 | grep -E 'RPATH|RUNPATH|NEEDED'`, `ls -l` for the mode, and `getcap signal-pyarmor-linux-x86_64` (empty).
+
+- **Impact.** In the default deployment: none demonstrated. The loader configuration is conventional and the extraction directory is correctly protected, so classic `LD_PRELOAD`-style or `_MEI` planting attacks do not apply. The exposure is conditional and inherited from the packager: **if** the binary is ever installed setuid/setgid, or run by a privileged wrapper that passes through caller-controlled environment variables, then PyInstaller 6.20.0 provides a local privilege-escalation primitive (CVE-class 7.8 in the component) and, independently, an arbitrary-directory deletion primitive. Because the artefact is likely to be deployed in CI and container tooling where elevated execution is common, the condition is not far-fetched — but it is a property of the installation, not of the shipped file.
+
+- **Recommendation.** Rebuild with PyInstaller **6.22.1+** (the 6.20.0 bootloader is byte-identical to stock, so the upgrade is a rebuild, not a fork); never install the binary setuid/setgid — if elevated scanning is required, run it in a container and pass the target as a bind mount instead; if a privileged wrapper is unavoidable, strip `_PYI_*` and `LD_*` from the environment before exec; and add a packaging-version check to the release gate so the bootloader is tracked like any other dependency.
+
+---
+
 ## 6. Controls that behaved correctly
 
 Recorded so that the assessment is balanced and so these are not regressed:
@@ -1390,6 +1435,7 @@ Per-script invocation, required environment and expected output are in
 | `14-check-f01.py` | F-01 | The whole F-01 chain in one command: which agents register the shell tool (from their bytecode), what `run_shell` calls, and the tool running `whoami` + `cat /etc/passwd` on the host, both verified against the script's own reads - `F-01 reproduced: 3/3` |
 | `15-check-f04.py` | F-04 | The whole F-04 claim in one command: every OpenSSL build in the archive with its file, the bundled runtime's own `ssl` version and TLS defaults, and each advisory evaluated against its fixed-version boundary - `F-04 reproduced: 3/3` |
 | `16-check-f08.py` | F-08 | The whole F-08 claim in one command: build-host path and editable flag from both `direct_url.json` records, build timestamps, the ELF `.comment` toolchain (parsed directly, then attributed to the stock PyInstaller bootloader by `.text` hash), shipped tests, foreign-platform runtimes and build-only runtime dependencies - `F-08 reproduced: 3/3` |
+| `18-check-loading.py` | F-17 | Loader search path, setuid/capabilities, the run-time extraction directory's mode, `_PYI_*` spoofing attempts and the embedded PyInstaller version against GHSA-9fxf-4qw3-ghmr — `loading/privilege reproduced: 4/4` |
 | `06-poc-f02-workspace.py` | F-02 | Path traversal via the GUID, symlink adoption under `exist_ok=True`, default mode `0o755` |
 | `07-poc-f06-tls-endpoint.py` | F-06 | Logging HTTPS endpoint with a self-signed certificate; captures the requests that verification-off lets through |
 | `08-collect-runtime-versions.py` | F-04, F-09, F-11, F-12 | Prints every security-relevant linked/loaded version from inside the reconstructed runtime |
