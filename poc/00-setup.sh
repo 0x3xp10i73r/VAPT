@@ -165,6 +165,11 @@ Everything below assumes this shell:
     export PYTHONHOME=$WORK/pyhome
     alias py3='env -u PYTHONHOME -u PYTHONPATH python3'
 
+  Those exports are for ./py313host only. A host python3 that inherits them
+  loads the bundled 3.13 stdlib and dies with "bad magic number in 'encodings'".
+  Commands that run on the host interpreter use the py3 alias instead:
+      py3 poc/16-check-f08.py
+
 Then, from README.md step 6:
     cd $WORK
     ./py313host $POC/03-armored-module-survey.py     # F-03: 62/62 modules, no licence

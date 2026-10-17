@@ -37,6 +37,25 @@ There are **two kinds of script** and they need different interpreters:
 | Reads the extracted artefact only | your system `python3` (3.13 ideal) | `poc/11`, `12`, `13`, `07`, `01` |
 | Imports the frozen 3.13 modules | `./py313host` (built in step 5) | the frozen `.pyc` files are CPython 3.13 bytecode and must run on the `libpython3.13` shipped inside the binary |
 
+> **Keep the step-5 exports away from your system `python3`.** `PYTHONHOME` points
+> at `$WORK/pyhome`, which stands in for the bundled **3.13** standard library. Set
+> it in a shell whose `python3` is newer (3.14, or anything that is not 3.13) and
+> the interpreter dies *before reading the script*:
+>
+> ```
+> Fatal Python error: Failed to import encodings module
+> ImportError: bad magic number in 'encodings': b'\xf3\r\r\n'
+> ```
+>
+> That is CPython refusing its own stdlib, not a bug in the PoC. The exports exist
+> for `./py313host`; scripts of the first kind above need a clean environment:
+>
+> ```bash
+> env -u PYTHONHOME -u PYTHONPATH python3 poc/16-check-f08.py
+> ```
+>
+> `poc/00-setup.sh` prints the same remedy as `alias py3='env -u PYTHONHOME -u PYTHONPATH python3'`.
+
 `py313host` propagates its command line into the script's `sys.argv`, so every
 script — including the argument-taking ones — can also be run through it. That
 makes `./py313host` a universal fallback if your system Python is newer than the
@@ -354,9 +373,19 @@ Nothing here needs the reconstructed host or any execution: F-08 is read
 straight out of the distributed artefact. Any Python 3.8+ will do.
 
 ```bash
+# reads the artefact only, so it runs on your system python3 - not py313host
 python3 poc/16-check-f08.py                       # finds the artefacts itself
 python3 poc/16-check-f08.py --binary /path/to/signal-pyarmor-linux-x86_64
+
+# if this shell still has the step-5 exports for ./py313host, this form is
+# always safe (see the note on interpreters above):
+env -u PYTHONHOME -u PYTHONPATH python3 poc/16-check-f08.py
 ```
+
+This is the one focus script that does **not** need `./py313host`: it imports
+nothing from the product. It therefore must *not* inherit `PYTHONHOME`/`PYTHONPATH`
+— with those set, a system Python newer than 3.13 aborts with `bad magic number in
+'encodings'` before the script starts.
 
 ```
 == A. provenance: where and how the release was built ==
