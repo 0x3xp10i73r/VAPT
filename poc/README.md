@@ -348,6 +348,62 @@ The advisory table ages faster than the binary: `LATEST_30` and `ADVISORIES`
 at the top of the script are a snapshot of 2026-10-16 and should be refreshed
 before the numbers are quoted later.
 
+### Just F-08 — build provenance and shipped development material
+
+Nothing here needs the reconstructed host or any execution: F-08 is read
+straight out of the distributed artefact. Any Python 3.8+ will do.
+
+```bash
+python3 poc/16-check-f08.py                       # finds the artefacts itself
+python3 poc/16-check-f08.py --binary /path/to/signal-pyarmor-linux-x86_64
+```
+
+```
+== A. provenance: where and how the release was built ==
+   signal-2026.9.0        file:///builds/siglab/noscan  (editable=True)
+   pockit-0.1.52          file:///builds/siglab/noscan/extensions/pockit-0.1.52-py3-none-any.whl  (editable=None)
+   PASS - direct_url.json exposes an absolute build-host checkout path
+   PASS - the install is recorded as editable (built from a source tree, not a package)
+   PASS - uv_cache.json build timestamp: 1789075955 (2026-09-10T21:32:35Z)
+   PASS - PyArmor banner in shipped sources: # Pyarmor 9.2.2 (ci), 008246, BlackDuckSignal, 2026-09-10T21:32:15
+
+== B. toolchain: what built the binary (ELF .comment) ==
+   .comment: GCC: (Ubuntu 7.5.0-3ubuntu1~18.04) 7.5.0
+   compiler: GCC 7.5.0   distro: Ubuntu 18.04   (standard support ended April 2023)
+   PASS - the shipped toolchain is past end of life (April 2023)
+
+== C. development material shipped in the release ==
+   tests/ tree      : 79 files (4.9 MB), 79 carry a PyArmor banner
+   PASS - test suite ships at all: 79 files
+   PASS - every shipped test is itself obfuscated (79/79)
+   PASS - an internal 'leak scan' helper is part of the shipped tree: tests/integration/_leak_scan.py
+   dist-info records: 26 (report records 26)
+   platform runtimes: darwin_aarch64, darwin_x86_64, linux_aarch64, linux_x86_64, windows_x86_64
+   PASS - 4 foreign-platform runtime(s) in a linux_x86_64 build, 2.7 MB unused
+   PASS - declared runtime dependency 'pip-audit==2.10.0' - build tool, module not collected
+   PASS - declared runtime dependency 'pyarmor-cli-core-darwin==8.1.0' - build tool, module not collected
+   PASS - declared runtime dependency 'pyarmor-cli-core-linux==8.1.0' - build tool, module not collected
+   PASS - declared runtime dependency 'pyarmor-cli-core-windows==8.1.0' - build tool, module not collected
+   NOTE - pockit>=0.1.4 is a hard runtime dependency (an autonomous exploit harness)
+
+   F-08 reproduced: 3/3
+```
+
+The `.comment` section is parsed by the script itself (a small ELF section-header
+reader, ~40 lines), so no `readelf`/`binutils` is required — `readelf -p .comment
+signal-pyarmor-linux-x86_64` gives the same one line if you prefer the tool.
+
+**What this proves and what it does not.** It proves the release carries the
+build host's checkout path and its editable-install flag, the build timestamp,
+the compiler and the EOL distribution it was built with, the complete obfuscated
+test tree, unused platform runtimes and build-only tools declared as runtime
+dependencies — all readable without executing anything. It does **not** prove an
+exploitable defect: this is information exposure and artefact hygiene, which is
+why the report scores it Low (3.7). Two details are worth noting because they
+show how much builds differ in what they leak: the internal path appears in
+*two* records (the product and its `pockit` dependency), and the shipped test
+tree is 4.9 MB — larger than many of the product's own modules.
+
 ## 1. Obtain the target and verify it
 
 The binary is stored in this repository as two parts on the `binary-drop` branch
