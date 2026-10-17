@@ -475,6 +475,20 @@ address when there is one, so this is not a loopback-only artefact. The scheme i
 never validated: `http://` is accepted from `.signal` **and** from `--llm-uri`,
 for any host, and the bearer token goes out in the clear.
 
+**Full capture.** Add `--capture <file>` to save every request exactly as it
+arrived on the socket (headers in wire order, body, byte count and sha256 of the
+raw bytes, plus the config that produced it):
+
+```bash
+python3 poc/17-check-plaintext.py --capture poc/captures/17-plaintext-capture.txt
+```
+
+A committed example is at **`poc/captures/17-plaintext-capture.txt`** — five
+requests from five agents, each carrying `Authorization: Bearer <canary>` and a
+plain HTTP request line, with no TLS record anywhere in the stream. The capture is
+from `--check-llm` probes, so the bodies are a fixed `"Hello"`; the config block
+at the top of the file shows exactly what was run.
+
 **What this proves and what it does not.** It proves the credential is
 transmitted unencrypted whenever an `http://` endpoint is configured, and that
 nothing warns the operator. It does **not** show the source-code payloads: the
