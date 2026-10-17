@@ -1,0 +1,42 @@
+# Analysis artefacts are never committed: the binary lives on the binary-drop
+# branch and in the v1.0 release, and everything else here is derived from it.
+signal-pyarmor-linux-x86_64
+signal-pyarmor-linux-x86_64.part-00
+signal-pyarmor-linux-x86_64.part-01
+part-00
+part-01
+
+# Produced by poc/00-setup.sh
+signal-pyarmor-linux-x86_64_extracted/
+merged/
+py313host
+pyhome/
+
+# Produced by individual PoCs. poc-target/ is deliberately ignored: the F-16
+# stage uses it to show the scanner reporting an ignored directory as
+# 'Identified 0 files for analysis'. A scan target that must be READ has to
+# live outside a checkout (poc/run-all.sh creates its own under $TMPDIR).
+poc-target/
+analysis/
+poc-f06-selfsigned.key
+poc-f06-selfsigned.pem
+poc-f06-requests.log
+tkcache/
+*.log
+
+# Produced by poc/run-all.sh's dynamic phases (F-05/F-06/F-15/F-16)
+poc-byo.signal
+poc-cfgkey.signal
+poc-tls.signal
+poc-home/
+poc-fakebin/
+poc-nodocker-bin/
+poc-*.out
+poc-seed.out
+cache-empty/
+results.sarif
+signal-cache.db
+signal_errors.json
+pockit-workspace/
+pockit_errors.jsonl
+__pycache__/
