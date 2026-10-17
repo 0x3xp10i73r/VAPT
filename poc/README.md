@@ -436,6 +436,58 @@ show how much builds differ in what they leak: the internal path appears in
 *two* records (the product and its `pockit` dependency), and the shipped test
 tree is 4.9 MB — larger than many of the product's own modules.
 
+### Just the transport — is the LLM traffic encrypted?
+
+`poc/17-check-plaintext.py` stands up a **plain HTTP** listener, points the tool
+at it with `uri = http://<addr>:<port>/v1`, and records what arrives. It needs no
+tokenizer cache and no Docker: `--check-llm-json true` probes the LLM layer
+directly.
+
+```bash
+python3 poc/17-check-plaintext.py
+python3 poc/17-check-plaintext.py --binary /path/to/signal-pyarmor-linux-x86_64
+```
+
+```
+plaintext transport check - LLM traffic over http://
+binary    : /home/user/VAPT/signal-pyarmor-linux-x86_64
+endpoint  : http://169.254.0.21:33003/v1
+listener  : 0.0.0.0:33003 (non-loopback address available)
+
+== A. a cleartext http:// endpoint is accepted ==
+   requests received: 5
+   PASS - the tool connected to a plain HTTP endpoint (5 request(s))
+
+== B. the bearer credential crosses the wire unencrypted ==
+   seen: Bearer CANARY_PLAINTEXT_9f31c2
+   PASS - Authorization: Bearer <canary> arrived over the plaintext socket
+   PASS - request line is cleartext HTTP ('POST /v1/chat/completions HTTP/1.1'), so no TLS handshake preceded it
+
+== C. nothing warns the operator ==
+   PASS - no insecure-transport warning or refusal in the output
+   PASS - the run actually reached the LLM layer (not a config error)
+
+   plaintext transport reproduced: 3/3
+```
+
+The listener binds `0.0.0.0` and the tool is aimed at the host's non-loopback
+address when there is one, so this is not a loopback-only artefact. The scheme is
+never validated: `http://` is accepted from `.signal` **and** from `--llm-uri`,
+for any host, and the bearer token goes out in the clear.
+
+**What this proves and what it does not.** It proves the credential is
+transmitted unencrypted whenever an `http://` endpoint is configured, and that
+nothing warns the operator. It does **not** show the source-code payloads: the
+`--check-llm` probe carries a fixed `"Hello"` prompt, and a full scan needs the
+tokenizer cache first (F-05). The same client and endpoint carry those payloads —
+that is the point of the finding — but this check does not re-demonstrate it.
+
+The default endpoint is HTTPS, so the exposure needs an `http://` endpoint to be
+configured — deliberately, through a shared `.signal`, or by an internal gateway.
+That is exactly the problem: transport security is optional and silent, in the
+same class as `--llm-ssl-verify false` (F-06), but a different defect — that one
+weakens TLS, this one removes it.
+
 ## 1. Obtain the target and verify it
 
 The binary is stored in this repository as two parts on the `binary-drop` branch
