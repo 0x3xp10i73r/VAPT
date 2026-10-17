@@ -27,6 +27,12 @@ Run it with any Python 3.8+ - nothing is imported from the product:
     python3 poc/17-check-plaintext.py --binary /path/to/signal-pyarmor-linux-x86_64
     python3 poc/17-check-plaintext.py --capture poc/captures/17-plaintext-capture.txt
 
+For a packet-level capture, pin the endpoint so a display filter is trivial:
+
+    sudo tcpdump -i lo -s0 -w /tmp/plain.pcap 'tcp port 8899' &
+    python3 poc/17-check-plaintext.py --host 127.0.0.1 --port 8899
+    wireshark /tmp/plain.pcap     # then: Decode As -> HTTP on port 8899
+
 Exit codes: 0 = reproduced, 1 = a claim failed, 2 = not set up.
 """
 import argparse
@@ -280,6 +286,12 @@ def main():
     ap.add_argument("--binary", help="path to " + BINARY_NAME)
     ap.add_argument("--capture", metavar="FILE",
                     help="write the raw captured requests to FILE")
+    ap.add_argument("--host", metavar="ADDR",
+                    help="address to put in the endpoint (default: this host's "
+                         "non-loopback address, else 127.0.0.1)")
+    ap.add_argument("--port", type=int,
+                    help="fixed listener port (default: a free port). Pin this when "
+                         "capturing packets so the filter is 'tcp port <N>'")
     ap.add_argument("--keep", action="store_true", help="keep the work directory")
     ap.add_argument("--timeout", type=int, default=120, help="seconds for the run (default 120)")
     args = ap.parse_args()
@@ -299,14 +311,14 @@ def main():
         "MARKER = 'POC-PLAINTEXT-SOURCE-SENTINEL'\n"
         "def f(c):\n    return c\n")
 
-    port = free_port()
-    addr = outward_address() or "127.0.0.1"
-    loopback_only = addr == "127.0.0.1"
+    port = args.port or free_port()
+    addr = args.host or outward_address() or "127.0.0.1"
+    loopback_only = addr.startswith("127.")
     uri = "http://%s:%d/v1" % (addr, port)
     cfg = work / "poc-transport.signal"
     write_config(cfg, uri)
 
-    server = Listener(port)
+    server = Listener(port, host="0.0.0.0" if args.host in (None, "0.0.0.0") else args.host)
     server.start()
 
     print("plaintext transport check - LLM traffic over http://")
@@ -316,8 +328,11 @@ def main():
           (port, "non-loopback address available" if not loopback_only
                  else "no non-loopback address - testing loopback only"))
     if loopback_only:
-        print("   NOTE - this host has no outward address, so only the loopback path is shown;")
-        print("          the scheme acceptance is the same either way")
+        print("   NOTE - loopback endpoint: capture on the 'lo' interface in Wireshark,")
+        print("          filter 'tcp port %d', then Decode As -> HTTP if it shows as TCP" % port)
+    else:
+        print("   NOTE - non-loopback endpoint: capture on the interface that address")
+        print("          belongs to, filter 'tcp port %d'" % port)
 
     env = dict(os.environ)
     for var in ("PYTHONHOME", "PYTHONPATH", "TIKTOKEN_CACHE_DIR"):

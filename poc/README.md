@@ -475,9 +475,23 @@ address when there is one, so this is not a loopback-only artefact. The scheme i
 never validated: `http://` is accepted from `.signal` **and** from `--llm-uri`,
 for any host, and the bearer token goes out in the clear.
 
-**Full capture.** Add `--capture <file>` to save every request exactly as it
-arrived on the socket (headers in wire order, body, byte count and sha256 of the
-raw bytes, plus the config that produced it):
+**Packet-level capture (Wireshark).** Pin the port so the display filter is
+`tcp port 8899`, capture on `lo`, and open the pcap:
+
+```bash
+sudo tcpdump -i lo -s0 -U -w /tmp/plaintext.pcap 'tcp port 8899'
+env -u PYTHONHOME -u PYTHONPATH python3 poc/17-check-plaintext.py --host 127.0.0.1 --port 8899
+wireshark /tmp/plaintext.pcap        # Decode As -> HTTP on port 8899
+```
+
+`./poc/capture-plaintext.sh` automates those three steps and prints the decoded
+`Authorization` headers. Step-by-step, including the WSL specifics (Windows
+Wireshark cannot see WSL's loopback) and the "Decode As → HTTP" gotcha:
+**`poc/captures/README.md`**.
+
+**Application-level capture.** Add `--capture <file>` to save every request
+exactly as it arrived on the socket (headers in wire order, body, byte count and
+sha256 of the raw bytes, plus the config that produced it):
 
 ```bash
 python3 poc/17-check-plaintext.py --capture poc/captures/17-plaintext-capture.txt
