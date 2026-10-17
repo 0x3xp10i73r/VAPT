@@ -399,7 +399,10 @@ nothing from the product. It therefore must *not* inherit `PYTHONHOME`/`PYTHONPA
 == B. toolchain: what built the binary (ELF .comment) ==
    .comment: GCC: (Ubuntu 7.5.0-3ubuntu1~18.04) 7.5.0
    compiler: GCC 7.5.0   distro: Ubuntu 18.04   (standard support ended April 2023)
-   PASS - the shipped toolchain is past end of life (April 2023)
+   PASS - the executable discloses the toolchain that produced it
+   NOTE - .text is byte-identical to PyInstaller 6.20.0's stock Linux
+          bootloader, which upstream builds in an ubuntu:18.04 container:
+          the stamp describes that bootloader, not your own build image
 
 == C. development material shipped in the release ==
    tests/ tree      : 79 files (4.9 MB), 79 carry a PyArmor banner
@@ -424,7 +427,7 @@ signal-pyarmor-linux-x86_64` gives the same one line if you prefer the tool.
 
 **What this proves and what it does not.** It proves the release carries the
 build host's checkout path and its editable-install flag, the build timestamp,
-the compiler and the EOL distribution it was built with, the complete obfuscated
+the compiler and distribution behind its bootloader, the complete obfuscated
 test tree, unused platform runtimes and build-only tools declared as runtime
 dependencies — all readable without executing anything. It does **not** prove an
 exploitable defect: this is information exposure and artefact hygiene, which is

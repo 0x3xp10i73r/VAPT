@@ -8,8 +8,10 @@ PASS/FAIL per claim:
   A. provenance   - direct_url.json (internal CI build path + editable install,
                     for the product *and* for its pockit dependency), the
                     uv_cache build timestamp and the PyArmor banner timestamp
-  B. toolchain    - the ELF .comment section: the compiler and distro the
-                    release was built with (parsed here, no binutils needed)
+  B. toolchain    - the ELF .comment section: the compiler and distro behind
+                    the executable (parsed here, no binutils needed), matched
+                    against PyInstaller's stock bootloader so the stamp is not
+                    mis-attributed to the vendor's own build image
   C. dev material - the shipped tests/ tree, the dist-info records, the
                     foreign-platform PyArmor runtimes, and build-only tools
                     declared as runtime dependencies
@@ -22,9 +24,11 @@ nothing is imported from the product:
 
 Exit codes: 0 = every claim reproduced, 1 = a claim failed, 2 = not set up.
 """
+import hashlib
 import json
 import os
 import pathlib
+import re
 import struct
 import sys
 
@@ -38,6 +42,15 @@ BUILD_ONLY_DEPS = ("pip-audit", "pyarmor-cli-core")
 # Standard-support end dates for the distributions a build could name. Only
 # used to say whether the toolchain is past end of life; extend as needed.
 DISTRO_EOL = {"16.04": "April 2021", "18.04": "April 2023", "20.04": "May 2025"}
+
+# sha256 of .text in PyInstaller's stock Linux-64bit-intel bootloader, taken from
+# the manylinux2014 wheels on PyPI. Byte-stable per release, so a match proves the
+# executable ships an unmodified upstream bootloader - and upstream compiles it in
+# an ubuntu:18.04 container, which is where the .comment stamp comes from.
+STOCK_BOOTLOADERS = {
+    "9ecbaec380762afad2ac6b2a9c1ba1c70c0bd72b827dbed85c573731df453606": "6.18.0/6.19.0",
+    "73a4f7031b47c283106e74bc0a82135325e98d7a2de49de6ab8f1b8ef5da5d1f": "6.20.0",
+}
 
 
 # ------------------------------------------------------------------ locate
@@ -171,15 +184,24 @@ def check_provenance(extract):
 
     # The PyArmor banner in the shipped sources carries the same build moment,
     # plus the licensee name the runtime was issued to.
+    # Find the banner itself rather than assuming it is the first line of the
+    # first file: three shipped scripts start with a shebang, so taking line 0
+    # would print "#!/usr/bin/env python3" and call it a PyArmor banner.
     banner = None
-    for p in sorted((pathlib.Path(extract) / "tests").rglob("*.py"))[:1] if \
-            (pathlib.Path(extract) / "tests").is_dir() else []:
-        try:
-            banner = p.read_text(errors="replace").splitlines()[0]
-        except OSError:
-            pass
+    tests_dir = pathlib.Path(extract) / "tests"
+    if tests_dir.is_dir():
+        for p in sorted(tests_dir.rglob("*.py")):
+            try:
+                head = p.read_text(errors="replace").splitlines()[:5]
+            except OSError:
+                continue
+            banner = next((ln for ln in head if ln.startswith("# Pyarmor")), None)
+            if banner:
+                break
     if banner:
         print("   PASS - PyArmor banner in shipped sources: %s" % banner)
+    else:
+        print("   NOTE - no PyArmor banner in the shipped test sources")
     return ok
 
 
@@ -200,7 +222,6 @@ def check_toolchain(binary):
     if not gcc:
         print("   FAIL - no GCC build stamp in .comment")
         return False
-    import re
     # e.g. "GCC: (Ubuntu 7.5.0-3ubuntu1~18.04) 7.5.0" -> distro 18.04, gcc 7.5.0
     m = re.search(r"Ubuntu ([0-9.]+)-[^)~]*~([0-9.]+)[^)]*\)\s*([0-9.]+)", gcc)
     if not m:
@@ -210,9 +231,22 @@ def check_toolchain(binary):
     eol = DISTRO_EOL.get(distro)
     print("   compiler: GCC %s   distro: Ubuntu %s%s"
           % (version, distro, ("   (standard support ended %s)" % eol) if eol else ""))
-    print("   %s the shipped toolchain is %s"
-          % ("PASS -" if eol else "NOTE -",
-             ("past end of life (%s)" % eol) if eol else "not in the known-EOL table"))
+    print("   PASS - the executable discloses the toolchain that produced it")
+
+    # Attribution matters: PyInstaller's stock Linux bootloader is compiled upstream
+    # on ubuntu:18.04, so a .comment stamp alone says nothing about the vendor's CI.
+    try:
+        text_hash = hashlib.sha256(elf_section(binary, ".text")).hexdigest()
+    except (OSError, ValueError, struct.error):
+        text_hash = None
+    known = STOCK_BOOTLOADERS.get(text_hash) if text_hash else None
+    if known:
+        print("   NOTE - .text is byte-identical to PyInstaller %s's stock Linux" % known)
+        print("          bootloader, which upstream builds in an ubuntu:18.04 container:")
+        print("          the stamp describes that bootloader, not your own build image")
+    elif text_hash:
+        print("   NOTE - .text matches no stock PyInstaller bootloader: this is a custom")
+        print("          build, so the stamp plausibly describes your own build image")
     return True
 
 
@@ -308,10 +342,11 @@ def main():
     print("""
    What this shows: the distributed artefact carries the build host's checkout
    path (/builds/<group>/<project>) and the editable-install flag, the build
-   timestamp, the compiler and distribution the release was built with, the
-   complete obfuscated test tree, four unused platform-specific PyArmor
-   runtimes, and build-only tools declared as runtime dependencies. None of it
-   is needed at run time; all of it is readable without executing anything.
+   timestamp, the compiler and distribution behind its bootloader (upstream's,
+   when the bootloader is stock), the complete obfuscated test tree, four unused
+   platform-specific PyArmor runtimes, and build-only tools declared as runtime
+   dependencies. None of it is needed at run time; all of it is readable without
+   executing anything.
 
    What it does not show: any exploitable defect. This is information exposure
    and artefact hygiene - it accelerates targeted research, leaks internal

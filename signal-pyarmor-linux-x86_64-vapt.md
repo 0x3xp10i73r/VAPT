@@ -12,7 +12,7 @@
 
 **Assessment date:** 16 October 2026
 
-**Revision 9 — 16 October 2026 (current).** Adds focused one-command checks: `poc/16-check-f08.py` for F-08 (build provenance, ELF toolchain and shipped development material, read without executing anything), `poc/15-check-f04.py` for F-04 (every OpenSSL build in the archive attributed to its file, the runtime's own version and TLS defaults, and each advisory evaluated against its fixed-version boundary) and `poc/14-check-f01.py` for F-01: it reads the `register_workspace_tools(...)` call site out of every agent module in the shipped archive (three ask for `shell=True`, two get file tools only), disassembles `run_shell` to the exact `subprocess.run(..., shell=True, timeout=120, cwd=...)` call, and then executes the shipped tool with a metacharacter payload on the host, reporting PASS/FAIL per link (`F-01 reproduced: 3/3`). Also: phase 6 of `poc/run-all.sh` now keeps its scan target outside the checkout (a `.gitignore`d target is skipped by the scanner - the very rule F-16 documents), the suite keeps a full transcript at `<work>/poc-run.log` and repeats failed checks in its summary, and the shell scripts are committed executable.
+**Revision 9 — 16 October 2026 (current).** Adds focused one-command checks: `poc/16-check-f08.py` for F-08 (build provenance, ELF toolchain and shipped development material, read without executing anything; it also attributes the `.comment` stamp by hashing `.text` - the executable matches PyInstaller 6.20.0's stock Linux bootloader, so the Ubuntu 18.04 line is upstream's build container, not the vendor's), `poc/15-check-f04.py` for F-04 (every OpenSSL build in the archive attributed to its file, the runtime's own version and TLS defaults, and each advisory evaluated against its fixed-version boundary) and `poc/14-check-f01.py` for F-01: it reads the `register_workspace_tools(...)` call site out of every agent module in the shipped archive (three ask for `shell=True`, two get file tools only), disassembles `run_shell` to the exact `subprocess.run(..., shell=True, timeout=120, cwd=...)` call, and then executes the shipped tool with a metacharacter payload on the host, reporting PASS/FAIL per link (`F-01 reproduced: 3/3`). Also: phase 6 of `poc/run-all.sh` now keeps its scan target outside the checkout (a `.gitignore`d target is skipped by the scanner - the very rule F-16 documents), the suite keeps a full transcript at `<work>/poc-run.log` and repeats failed checks in its summary, and the shell scripts are committed executable.
 
 **Revision 8 — 16 October 2026 (current).** **The whole assessment is now one command.** `poc/run-all.sh` runs the offline PoCs and the four dynamic findings (F-05, F-06, F-15, F-16) in a single serial pass, starting and tearing down every listener it needs; it was verified from a fresh clone on 16 October 2026 with **11 checks passing, 0 failures, exit 0** (output transcribed in `poc/README.md`). A first run on a host *with* egress then exposed a defect in the runner itself, now fixed: phase 3 trusted the seeder's exit code, and `poc/seed-tokenizer-cache.py` returned a non-zero code after a fresh, verified fetch (`status: seeded`), so a perfectly good cache was reported as F-05 and the dynamic phases were skipped. The seeder now exits 0 once the cache is present and verified, and the runner decides success by the cache file and its pinned digest, not by any return code. Phase 5's "no docker" stage was also made host-independent: on a machine that *has* docker, the runner re-runs it with a mirror of `PATH` that omits every docker entry and observes the same refusal, which is itself the finding — the gate is a lookup, not a capability check — so the stage is no longer skipped on a typical developer or CI host. The runner
 also keeps its own transcript at `<work>/poc-run.log` and repeats every failed
@@ -50,7 +50,7 @@ The binary was recovered from the repository hosting it and verified before anal
 | Format | ELF 64-bit LSB executable, x86-64, `Type: EXEC` (non-PIE) |
 | Interpreter | `/lib64/ld-linux-x86-64.so.2` |
 | Build ID | `d3d060968c2b8c41aa17bbc6e127f0d462c98025` |
-| Compiler (`.comment`) | `GCC: (Ubuntu 7.5.0-3ubuntu1~18.04) 7.5.0` |
+| Compiler (`.comment`) | `GCC: (Ubuntu 7.5.0-3ubuntu1~18.04) 7.5.0` — PyInstaller 6.20.0's stock bootloader, built upstream |
 | Version banner | `Black Duck Signal version 2026.9.0` |
 
 The executable is a **PyInstaller** bootloader hosting a **PyArmor**-protected Python application:
@@ -635,7 +635,7 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
   - **`pip-audit` 2.10.0 is declared as a runtime dependency** (`Requires-Dist: pip-audit==2.10.0`) even though it is a build/SCA tool with no runtime role. Its modules are *not* collected into the frozen artefact (no `pip_audit` directory is present) — the hygiene issue is the requirement itself, which propagates into any environment installed from this metadata and into the SBOM consumers rely on. The PyArmor toolchain is declared the same way, once per build platform: `Requires-Dist: pyarmor-cli-core-darwin==8.1.0`, `…-linux==8.1.0`, `…-windows==8.1.0` — none of them collected either.
   - `pockit>=0.1.4` — an autonomous exploit-generation harness — is likewise a hard runtime dependency, not an optional extra.
   - `pyarmor_runtime_008246/` contains runtimes for **darwin_aarch64, darwin_x86_64, linux_aarch64, windows_x86_64** in a Linux x86-64-only build — 2.7 MB that can never load, plus additional supply-chain surface.
-  - Build toolchain: GCC 7.5.0 / Ubuntu 18.04 (EOL since April 2023).
+  - Build toolchain: `.comment` records `GCC: (Ubuntu 7.5.0-3ubuntu1~18.04) 7.5.0` (Ubuntu 18.04 standard support ended April 2023). **Attribution:** the executable's `.text` is byte-identical to **PyInstaller 6.20.0**'s stock Linux bootloader (`.text` sha256 `73a4f703…5da5d1f`), and PyInstaller compiles that bootloader upstream in an `ubuntu:18.04` container (`bootloader/Dockerfile.glibc`). The stamp therefore identifies the *packaging toolchain*, not the vendor's build image — it is provenance, not evidence of an EOL build host.
 
 - **PoC.** **`poc/16-check-f08.py` is this finding in one command** — it reads the provenance records, parses the ELF `.comment` section itself (no `binutils` needed), and inventories the shipped development material, printing `F-08 reproduced: 3/3`. It runs under any Python 3.8+, since nothing from the product is imported. Everything it reports is readable from the *artefact as distributed* — no code execution required:
 
@@ -662,7 +662,7 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
 
 - **Impact.** Accelerates targeted research, exposes internal naming conventions and infrastructure details, inflates the artefact with unused code and binaries, and enlarges the dependency attack surface with tooling that has no runtime purpose. A malicious or accidental repackaging would be hard to spot.
 
-- **Recommendation.** Strip `direct_url.json`/`uv_cache.json` and the `tests/` tree from release builds; ship only the runtime for the target platform; move `pip-audit` to a build-time extra; make PoCKit genuinely optional; build with a supported toolchain; publish an SBOM and signed hashes with the release.
+- **Recommendation.** Strip `direct_url.json`/`uv_cache.json` and the `tests/` tree from release builds; ship only the runtime for the target platform; move `pip-audit` to a build-time extra; make PoCKit genuinely optional; publish an SBOM and signed hashes with the release. The `.comment` stamp belongs to the stock bootloader, so record PyInstaller 6.20.0 in the SBOM and track it; change the stamp only by rebuilding the bootloader from source.
 
 ---
 
@@ -1254,7 +1254,7 @@ sha256sum signal-pyarmor-linux-x86_64
 readelf -h signal-pyarmor-linux-x86_64                 # Type: EXEC  -> non-PIE        (F-13)
 readelf -lW signal-pyarmor-linux-x86_64 | grep -E 'GNU_STACK|GNU_RELRO'
 readelf -dW signal-pyarmor-linux-x86_64 | grep -E 'BIND_NOW|FLAGS|NEEDED'   # no BIND_NOW -> Partial RELRO
-readelf -p .comment signal-pyarmor-linux-x86_64        # GCC 7.5.0 / Ubuntu 18.04      (F-08)
+readelf -p .comment signal-pyarmor-linux-x86_64        # GCC 7.5.0/18.04 - upstream bootloader (F-08)
 
 # ------------------------------- 3. Unpack the PyInstaller archive (not encrypted)
 pyinstxtractor-ng signal-pyarmor-linux-x86_64          # 485 entries; PYZ -> 6,379 modules
@@ -1389,7 +1389,7 @@ Per-script invocation, required environment and expected output are in
 | `05-poc-f01-host-shell.py` | F-01 | Executes the shipped `run_shell` tool with `whoami; cat /etc/passwd` plus a redirect; file written outside the workspace |
 | `14-check-f01.py` | F-01 | The whole F-01 chain in one command: which agents register the shell tool (from their bytecode), what `run_shell` calls, and the tool running `whoami` + `cat /etc/passwd` on the host, both verified against the script's own reads - `F-01 reproduced: 3/3` |
 | `15-check-f04.py` | F-04 | The whole F-04 claim in one command: every OpenSSL build in the archive with its file, the bundled runtime's own `ssl` version and TLS defaults, and each advisory evaluated against its fixed-version boundary - `F-04 reproduced: 3/3` |
-| `16-check-f08.py` | F-08 | The whole F-08 claim in one command: build-host path and editable flag from both `direct_url.json` records, build timestamps, the ELF `.comment` toolchain (parsed directly), shipped tests, foreign-platform runtimes and build-only runtime dependencies - `F-08 reproduced: 3/3` |
+| `16-check-f08.py` | F-08 | The whole F-08 claim in one command: build-host path and editable flag from both `direct_url.json` records, build timestamps, the ELF `.comment` toolchain (parsed directly, then attributed to the stock PyInstaller bootloader by `.text` hash), shipped tests, foreign-platform runtimes and build-only runtime dependencies - `F-08 reproduced: 3/3` |
 | `06-poc-f02-workspace.py` | F-02 | Path traversal via the GUID, symlink adoption under `exist_ok=True`, default mode `0o755` |
 | `07-poc-f06-tls-endpoint.py` | F-06 | Logging HTTPS endpoint with a self-signed certificate; captures the requests that verification-off lets through |
 | `08-collect-runtime-versions.py` | F-04, F-09, F-11, F-12 | Prints every security-relevant linked/loaded version from inside the reconstructed runtime |

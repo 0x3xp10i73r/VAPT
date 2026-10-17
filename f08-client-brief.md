@@ -25,7 +25,7 @@ Group them into five buckets. This is the order to present them in — provenanc
 | | Same path again in `pockit-0.1.52.dist-info/direct_url.json` | The bundled dependency records the same path, including the wheel it was built from | Shows the residue is systemic across the build, not one stray file |
 | **A. When it was built** | `uv_cache.json` = `1789075955` → 2026-09-10 21:32:35Z; PyArmor banner 21:32:15Z | Two independent clocks agree: the release was built on 10 September 2026 at 21:32 UTC | Lets an outsider line the build up against dependency versions and vulnerability disclosure dates |
 | **A. How it was protected** | `# Pyarmor 9.2.2 (ci), 008246, BlackDuckSignal, …` | The obfuscator version, build id and licence name are stamped into every protected file | Tells a researcher precisely which protection build to attack, and leaks an internal identifier |
-| **B. What built it** | `.comment`: `GCC: (Ubuntu 7.5.0-3ubuntu1~18.04) 7.5.0` | Compiled with GCC 7.5.0 on Ubuntu 18.04 | 18.04 left standard support in April 2023. The build environment cannot receive normal security updates. Not evidence of compromise — evidence of an unmaintained link in the chain that produces trusted binaries |
+| **B. What built it** | `.comment`: `GCC: (Ubuntu 7.5.0-3ubuntu1~18.04) 7.5.0`; `.text` byte-identical to PyInstaller 6.20.0's stock Linux bootloader | Names the compiler and distro behind the executable, and pins the packaging toolchain exactly | **Attribution: this is upstream PyInstaller's own build container, not your CI.** It fixes the packaging version — it does not show your build image is EOL. Do not let this become "your build server is unsupported" |
 | **C. Development material** | `tests/` — 79 files, 4.9 MB, all PyArmor-wrapped, incl. `_leak_scan.py` and 13 `test_*_e2e.py` | The QA suite ships with the product | File, class and fixture names map your internal architecture and test scenarios. No plaintext logic is exposed — the files are obfuscated |
 | **D. Unused platform runtimes** | `darwin_aarch64`, `darwin_x86_64`, `linux_aarch64`, `windows_x86_64` inside a linux-x86_64 build — 2.7 MB | Four native blobs for platforms you don't ship | Dead weight, and four more binaries a customer's scanner has to trust and review |
 | **E. Misdeclared dependencies** | `Requires-Dist: pip-audit==2.10.0`, `pyarmor-cli-core-{darwin,linux,windows}==8.1.0`, `pockit>=0.1.4` | Build tools and platform-specific packages are declared as things you need at run time | Your SBOM is wrong. Anyone installing from this metadata pulls build tooling, and every scanner will flag it. `pockit` — the autonomous exploit harness — is a *hard* requirement, not an optional extra |
@@ -61,8 +61,8 @@ Three reasons. It is free reconnaissance that shortens an attacker's path; it pr
 **"Does shipping the tests leak our source code?"**
 No. All 79 files are PyArmor-wrapped bytecode; we did not recover plaintext logic. What leaks is the shape of the codebase — file names, class and function names, fixture names, and the presence of an internal leak-scan helper. That is architecture disclosure, not source disclosure.
 
-**"Is Ubuntu 18.04 a CVE?"**
-There is no single CVE to point at, and I would not invent one. It is an unsupported build environment: standard support ended in April 2023. Ask whether the build image is covered by Ubuntu Pro/ESM — if it is, the picture improves and the finding narrows to hygiene. If it isn't, the concern is supply chain: the host that produces your trusted artifacts can't be patched normally.
+**"Is Ubuntu 18.04 a CVE — and is that our build server?"**
+No CVE, and no: that stamp is not yours. The executable's `.text` is byte-identical to PyInstaller 6.20.0's stock Linux bootloader, and PyInstaller compiles that bootloader upstream in an `ubuntu:18.04` container. So the line identifies the packaging toolchain exactly — useful for inventory — but says nothing about your CI image. Removing it means rebuilding the bootloader, which is optional.
 
 **"Is `pip-audit` a vulnerability?"**
 No. It's a packaging defect. It's declared as a runtime dependency but its modules aren't in the artefact — so nothing is actually shipped to exploit. The damage is a wrong SBOM, needless dependency resolution, and scanner noise. One line in the build config fixes it.
@@ -92,7 +92,7 @@ Rebuild, then re-run `python3 poc/16-check-f08.py`. After remediation every clai
 | Strip `direct_url.json`, `uv_cache.json` and other `dist-info` residue; build from a wheel in a clean venv instead of an editable install | Release engineering | hours | Build-host path, editable flag, build timestamp |
 | Ship only `pyarmor_runtime_008246/linux_x86_64` | Release engineering | trivial | 2.7 MB and three native blobs |
 | Move `pip-audit` and `pyarmor-cli-core-*` to build-time extras; decide deliberately whether `pockit` is required | Packaging | trivial | Wrong SBOM, dependency bloat |
-| Rebuild on a supported base image (22.04/24.04, or ESM-patched 18.04) | Platform | days | EOL build toolchain (needs regression testing) |
+| Record PyInstaller 6.20.0 (identified from the bootloader) in the SBOM and track its advisories | Security | trivial | Unknown packaging version; the `.comment` stamp itself is upstream's, not a defect |
 | Generate the SBOM from the built artefact and sign it with the release | Release engineering | days | Trust in the published inventory |
 
 ---
@@ -105,7 +105,7 @@ Say the left column and you will be corrected in the meeting. Say the right colu
 |---|---|
 | "Source code leaked" | "Structure and inventory leaked; the logic stayed obfuscated" |
 | "The build server was compromised" | "No evidence of compromise; the build environment is unsupported" |
-| "Ubuntu 18.04 has CVEs that affect the product" | "Unsupported build toolchain; no CVE is attributed to shipped code" |
+| "You build on Ubuntu 18.04" | "That stamp is PyInstaller's upstream container; the artefact does not show your build image" |
 | "Critical" / "High" | "Low, 3.7 — network-readable, high complexity, confidentiality-only, limited" |
 | "Attackers can reach `/builds/siglab/noscan`" | "The path is disclosed; it grants no access" |
 
