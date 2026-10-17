@@ -12,7 +12,7 @@
 
 **Assessment date:** 16 October 2026
 
-**Revision 9 — 16 October 2026 (current).** Adds F-17 and `poc/18-check-loading.py` (native-code loading, privilege context and packaging trust), and adds the embedded PyInstaller 6.20.0 to F-12 — it is inside GHSA-9fxf-4qw3-ghmr (< 6.22.1), conditional on a setuid/setgid deployment. Also: Adds focused one-command checks: `poc/16-check-f08.py` for F-08 (build provenance, ELF toolchain and shipped development material, read without executing anything; it also attributes the `.comment` stamp by hashing `.text` - the executable matches PyInstaller 6.20.0's stock Linux bootloader, so the Ubuntu 18.04 line is upstream's build container, not the vendor's), `poc/15-check-f04.py` for F-04 (every OpenSSL build in the archive attributed to its file, the runtime's own version and TLS defaults, and each advisory evaluated against its fixed-version boundary) and `poc/14-check-f01.py` for F-01: it reads the `register_workspace_tools(...)` call site out of every agent module in the shipped archive (three ask for `shell=True`, two get file tools only), disassembles `run_shell` to the exact `subprocess.run(..., shell=True, timeout=120, cwd=...)` call, and then executes the shipped tool with a metacharacter payload on the host, reporting PASS/FAIL per link (`F-01 reproduced: 3/3`). Also: phase 6 of `poc/run-all.sh` now keeps its scan target outside the checkout (a `.gitignore`d target is skipped by the scanner - the very rule F-16 documents), the suite keeps a full transcript at `<work>/poc-run.log` and repeats failed checks in its summary, and the shell scripts are committed executable.
+**Revision 9 — 16 October 2026 (current).** Adds F-18 (`poc/19-check-xss.py`): the experimental HTML result preview substitutes result fields into a script block and markup without escaping, so untrusted scanned content can inject JavaScript into the analyst's report. Also adds F-17 and `poc/18-check-loading.py` (native-code loading, privilege context and packaging trust), and adds the embedded PyInstaller 6.20.0 to F-12 — it is inside GHSA-9fxf-4qw3-ghmr (< 6.22.1), conditional on a setuid/setgid deployment. Also: Adds focused one-command checks: `poc/16-check-f08.py` for F-08 (build provenance, ELF toolchain and shipped development material, read without executing anything; it also attributes the `.comment` stamp by hashing `.text` - the executable matches PyInstaller 6.20.0's stock Linux bootloader, so the Ubuntu 18.04 line is upstream's build container, not the vendor's), `poc/15-check-f04.py` for F-04 (every OpenSSL build in the archive attributed to its file, the runtime's own version and TLS defaults, and each advisory evaluated against its fixed-version boundary) and `poc/14-check-f01.py` for F-01: it reads the `register_workspace_tools(...)` call site out of every agent module in the shipped archive (three ask for `shell=True`, two get file tools only), disassembles `run_shell` to the exact `subprocess.run(..., shell=True, timeout=120, cwd=...)` call, and then executes the shipped tool with a metacharacter payload on the host, reporting PASS/FAIL per link (`F-01 reproduced: 3/3`). Also: phase 6 of `poc/run-all.sh` now keeps its scan target outside the checkout (a `.gitignore`d target is skipped by the scanner - the very rule F-16 documents), the suite keeps a full transcript at `<work>/poc-run.log` and repeats failed checks in its summary, and the shell scripts are committed executable.
 
 **Revision 8 — 16 October 2026 (current).** **The whole assessment is now one command.** `poc/run-all.sh` runs the offline PoCs and the four dynamic findings (F-05, F-06, F-15, F-16) in a single serial pass, starting and tearing down every listener it needs; it was verified from a fresh clone on 16 October 2026 with **11 checks passing, 0 failures, exit 0** (output transcribed in `poc/README.md`). A first run on a host *with* egress then exposed a defect in the runner itself, now fixed: phase 3 trusted the seeder's exit code, and `poc/seed-tokenizer-cache.py` returned a non-zero code after a fresh, verified fetch (`status: seeded`), so a perfectly good cache was reported as F-05 and the dynamic phases were skipped. The seeder now exits 0 once the cache is present and verified, and the runner decides success by the cache file and its pinned digest, not by any return code. Phase 5's "no docker" stage was also made host-independent: on a machine that *has* docker, the runner re-runs it with a mirror of `PATH` that omits every docker entry and observes the same refusal, which is itself the finding — the gate is a lookup, not a capability check — so the stage is no longer skipped on a typical developer or CI host. The runner
 also keeps its own transcript at `<work>/poc-run.log` and repeats every failed
@@ -135,6 +135,7 @@ Observed product tree inside the binary: `agents/`, `data/`, `prompts/`, `scans/
 | F-15 | Enabling PoCKit bypasses the operator's BYO LLM configuration: the agent's traffic is aimed at the vendor gateway (`https://llm.core.blackduck.com/` by default), its credential is resolved by a different rule from every other agent (a config-file key is not passed through, so it falls back to `ANTHROPIC_API_KEY`), and the Docker "isolation" is satisfied by the mere presence of a `docker` binary on `PATH` | **Medium** — CVSS 3.1 **6.5** | A04:2021 Insecure Design / A09:2021 Logging & Monitoring Failures | CWE-441, CWE-693, CWE-778 | **PoC executed** |
 | F-16 | Target source code, including credential-like literals found in it, is transmitted verbatim to the configured LLM endpoint with no redaction or opt-out, and that exposure is not reported to the operator | **Low** — CVSS 3.1 **3.1** | A09:2021 Security Logging and Monitoring Failures / A02:2021 | CWE-200, CWE-212 | **PoC executed** |
 | F-17 | Native-code loading is conventional, but the embedded PyInstaller 6.20.0 is inside GHSA-9fxf-4qw3-ghmr — a privileged-context loader hijack, live only if the binary is deployed setuid/setgid | **Low** — CVSS 3.1 **3.8** | A05:2021 Security Misconfiguration | CWE-427, CWE-829 | **PoC executed** |
+| F-18 | The `--result-preview` HTML report embeds result message text, rule id and artifact path into a script block without escaping, so untrusted analysed content can inject markup into the analyst's report | **Medium** — CVSS 3.1 **6.1** | A03:2021 Injection | CWE-79 | **PoC executed** |
 
 ---
 
@@ -1170,6 +1171,76 @@ The release is distributed with a SHA-256 in the release metadata and no signatu
 
 ---
 
+### F-18 — HTML result preview renders untrusted fields without escaping (stored XSS)
+
+- **Severity / CVSS:** **Medium, 6.1** — `CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N`
+- **OWASP:** A03:2021 Injection · **CWE:** CWE-79
+- **Affected code:** `utils/html_preview.py` — `render_html(doc, src_label, version)` and `build_rows(doc)` (shipped PyArmor-wrapped; the cited line numbers belong to a source build)
+
+- **Explanation.** `--result-preview true` writes a self-contained HTML report beside the SARIF file. The renderer holds a 16,728-byte template with four substitution points:
+
+  ```
+  <script>
+  const DATA = __DATA__;
+  const CLASSES = __CLASSES__;
+  ...
+  <code>__SRC__</code>            <span>__VERSION__</span>
+  ```
+
+  `__DATA__` is filled with `json.dumps(build_rows(doc))` and `__SRC__` with the caller's `src_label`, both by plain string replacement. JSON serialisation escapes quotes and backslashes but **not `<`**, so a value containing `</script>` closes the script element during HTML parsing and everything after it is parsed as new markup. `__SRC__` sits in markup with no escaping at all.
+
+  Three of the substituted values come from the analysed material: the result **message text**, the **rule id**, and the **artifact location**. The last one is the most exposed — it is the path of a scanned file, so an untrusted repository chooses it.
+
+- **Evidence / PoC.** `poc/19-check-xss.py` drives the shipped renderer (imported from the archive under the reconstructed host, so the real template is used) and parses the produced document:
+
+  ```
+  $ <work>/py313host poc/19-check-xss.py
+  == A. control: a benign document ==
+     document 16943 bytes, 1 script element(s)
+     PASS - exactly one script element, as the template intends
+
+  == B. result message text ==
+     payload : </script><script>window.__VAPT_PREVIEW_XSS__=1</script>
+     document 16987 bytes, 2 script element(s)
+       [0] 'const DATA = [{"rank": 0.0, "cls": null, ...'
+       [1] 'window.__VAPT_PREVIEW_XSS__=1'
+     PASS - the payload forms a SECOND script element
+     PASS - that element's body is the attacker's JavaScript
+
+  == C. src_label ==
+     label   : <img src=x onerror=window.__VAPT_PREVIEW_XSS__=1>
+     PASS - the label is parsed as a real <img> element
+     PASS - its onerror handler survives into the document
+
+  == D. artifact location (a path chosen by the scanned repository) ==
+     PASS - a hostile path breaks out of the script block the same way
+
+  == E. can a repository produce that path? ==
+     components: '<' + 'script><script>window.__VAPT_PREVIEW_XSS__=1<' + 'script>'
+     relative  : </script><script>window.__VAPT_PREVIEW_XSS__=1</script>
+     PASS - the path a scan would report IS the payload
+     PASS - it exists as a real file, so no SARIF import is needed
+
+     preview injection reproduced: 5/5
+  ```
+
+  The generated document is committed as `poc/captures/19-preview-xss.html`. Its data line reads:
+
+  ```
+  const DATA = [{... "loc": "</script><script>window.__VAPT_PREVIEW_XSS__=1</script>:10",
+                     "msg": "</script><script>window.__VAPT_PREVIEW_XSS__=1</script>"}];
+  ```
+
+  and the label appears as `<code><img src=x onerror=...></code>`.
+
+- **Reachability.** `</script>` cannot be a single file name because it contains `/`, but a path is a concatenation of components and each component is free to contain `<`, `>` and `script`. A repository containing directory `<`, directory `script><script>...<` and file `script>` yields exactly `</script><script>...</script>` as the reported path — verified in check E by creating that tree on disk. An analyst who scans that repository and opens the preview therefore runs the payload without importing anything. The message-text and rule-id variants cover the import path (`--import-results`), and the LLM-generated finding text is another source of the same characters. The option is off by default and requires `--prioritization`, which is what keeps this at Medium rather than High.
+
+- **Impact.** JavaScript executes in the preview document when the analyst opens it. That document already contains the findings — including source excerpts and file paths from the code that was scanned — so the script can rewrite what the report shows and can post its contents to a host of the attacker's choosing. It runs from `file://`, which limits what else it can read, but the report's own content is the valuable part. No browser was launched for this finding: the claim is that the renderer emits an executable script element, which the parser confirms.
+
+- **Recommendation.** For JSON inside a script block, escape `<`, `>` and `&` before substitution — at minimum replace `<` with `\u003c`, which JSON parsers accept and HTML does not interpret as a tag; or place the data in a `<script type="application/json">` element and `JSON.parse` its `textContent`. HTML-escape `src_label` and `version` (or assign them via `textContent`). Add regression tests using `</script>`, `<img onerror>`, quotes and the U+2028/U+2029 separators, asserting that untrusted values cannot create additional elements.
+
+---
+
 ## 6. Controls that behaved correctly
 
 Recorded so that the assessment is balanced and so these are not regressed:
@@ -1436,6 +1507,7 @@ Per-script invocation, required environment and expected output are in
 | `15-check-f04.py` | F-04 | The whole F-04 claim in one command: every OpenSSL build in the archive with its file, the bundled runtime's own `ssl` version and TLS defaults, and each advisory evaluated against its fixed-version boundary - `F-04 reproduced: 3/3` |
 | `16-check-f08.py` | F-08 | The whole F-08 claim in one command: build-host path and editable flag from both `direct_url.json` records, build timestamps, the ELF `.comment` toolchain (parsed directly, then attributed to the stock PyInstaller bootloader by `.text` hash), shipped tests, foreign-platform runtimes and build-only runtime dependencies - `F-08 reproduced: 3/3` |
 | `18-check-loading.py` | F-17 | Loader search path, setuid/capabilities, the run-time extraction directory's mode, `_PYI_*` spoofing attempts and the embedded PyInstaller version against GHSA-9fxf-4qw3-ghmr — `loading/privilege reproduced: 4/4` |
+| `19-check-xss.py` | F-18 | Renders a document through the shipped `utils/html_preview` with hostile message text, rule id, `src_label` and artifact path, then parses the result and counts script elements; also builds a real directory tree whose relative path is the payload — `preview injection reproduced: 5/5` |
 | `06-poc-f02-workspace.py` | F-02 | Path traversal via the GUID, symlink adoption under `exist_ok=True`, default mode `0o755` |
 | `07-poc-f06-tls-endpoint.py` | F-06 | Logging HTTPS endpoint with a self-signed certificate; captures the requests that verification-off lets through |
 | `08-collect-runtime-versions.py` | F-04, F-09, F-11, F-12 | Prints every security-relevant linked/loaded version from inside the reconstructed runtime |

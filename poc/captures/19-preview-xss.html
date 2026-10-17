@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signal — Prioritization Preview</title>
+<style>
+:root{
+  --bg:#0f1420; --panel:#171e2e; --panel2:#1e2740; --line:#2a344e; --text:#e6ebf5;
+  --muted:#93a0bd; --accent:#5b8def; --chip:#243052;
+}
+@media (prefers-color-scheme: light){
+  :root{ --bg:#f4f6fb; --panel:#ffffff; --panel2:#f0f3fa; --line:#dde3ef; --text:#1a2233; --muted:#5a6684; --accent:#2f6fe0; --chip:#e7edfb; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+header{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--panel)}
+h1{margin:0 0 4px;font-size:18px}
+.sub{color:var(--muted);font-size:13px}
+.stats{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.pill{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12px}
+.pill b{color:var(--accent);font-size:14px}
+.controls{display:flex;gap:24px;align-items:flex-end;padding:16px 24px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;z-index:5}
+.ctl{display:flex;flex-direction:column;gap:6px}
+.ctl label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+.ctl .val{color:var(--accent);font-weight:700}
+input[type=range]{width:220px;accent-color:var(--accent)}
+select,input[type=search]{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;min-width:180px}
+.wrap{overflow-x:auto;padding:0 12px 60px}
+table{border-collapse:collapse;width:100%;min-width:1000px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{position:sticky;top:0;background:var(--panel);font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);cursor:pointer;user-select:none}
+th:hover{color:var(--text)}
+tr.novel{background:linear-gradient(90deg,rgba(91,141,239,.09),transparent 40%)}
+td.msg{white-space:normal;max-width:460px;color:var(--muted);font-size:12.5px}
+.rankbar{display:inline-flex;align-items:center;gap:8px;min-width:120px}
+.rankbar .track{flex:1;height:8px;border-radius:4px;background:var(--panel2);overflow:hidden}
+.rankbar .fill{height:100%;border-radius:4px}
+.rankbar b{width:34px;text-align:right;font-variant-numeric:tabular-nums}
+.chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--chip)}
+.trad{color:var(--muted);background:transparent;border:1px solid var(--line)}
+.pqc{color:#b98bff;font-weight:700}
+.chip.kev{background:rgba(240,90,90,.18);color:#ff6b6b;border:1px solid rgba(240,90,90,.45);font-weight:700}
+tr.exploit{background:linear-gradient(90deg,rgba(240,90,90,.10),transparent 45%)}
+.num{font-variant-numeric:tabular-nums;text-align:right}
+.state{font-size:11px;font-weight:700;padding:1px 7px;border-radius:5px}
+.TP{background:rgba(52,199,120,.18);color:#34c778}
+.UNK{background:rgba(240,120,90,.18);color:#f0785a}
+.NEW{background:rgba(120,140,180,.18);color:var(--muted)}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+.doc{padding:14px 24px 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+.doc summary{cursor:pointer;font-weight:600;font-size:13px;color:var(--text);list-style:none}
+.doc summary::-webkit-details-marker{display:none}
+.doc summary::before{content:"▸ ";color:var(--accent)}
+.doc[open] summary::before{content:"▾ "}
+.doc-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:24px;margin-top:14px}
+@media(max-width:900px){.doc-grid{grid-template-columns:1fr}}
+.doc h3{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 9px}
+.doc ol{margin:0;padding-left:18px}
+.doc li{margin-bottom:7px;font-size:13px}
+.doc li b{color:var(--accent);font-weight:600}
+.snip{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre}
+.snip .add{background:rgba(91,141,239,.16);display:inline-block;width:100%;border-radius:3px}
+.snip .cmt{color:var(--muted)}
+.formula{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12.5px}
+.formula .eq{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding-bottom:9px;margin-bottom:9px;border-bottom:1px solid var(--line)}
+.formula .eq b{color:var(--accent)}
+.formula .cmt{color:var(--muted)}
+.formula .leg{display:flex;flex-direction:column;gap:6px}
+.formula .leg > div{line-height:1.45}
+.formula .leg .f{display:inline-block;width:16px;font-weight:700;color:var(--accent);font-family:ui-monospace,Menlo,monospace}
+.statelegend{display:flex;flex-direction:column;gap:8px;margin-top:2px}
+.statelegend > div{font-size:13px;line-height:1.4;display:flex;align-items:baseline;gap:9px}
+.statelegend .state{flex:0 0 auto;min-width:34px;text-align:center}
+.statelegend .cmt{color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>BlackDuck Signal Code Analysis</h1>
+  <div class="sub">Result Preview (2026.9.0): <code><img src=x onerror=window.__VAPT_PREVIEW_XSS__=1></code> · rank (severity) + novelty annotations applied. Preview for filtering discussion.</div>
+  <div class="stats">
+    <span class="pill">Total <b id="s-total">0</b></span>
+    <span class="pill">Novel (blind-spot) <b id="s-novel">0</b></span>
+    <span class="pill">Showing <b id="s-shown">0</b></span>
+    <span class="pill">PQC exposure <b id="s-pqc">0</b></span>
+    <span class="pill">Exploitable · KEV <b id="s-kev">0</b></span>
+  </div>
+</header>
+
+<details class="doc" open>
+  <summary>How these properties are produced</summary>
+  <div class="doc-grid">
+    <div>
+      <h3>Process</h3>
+      <ol>
+        <li>Runs as an <b>opt-in stage</b> after the normal scan — LLM analysis, CVSS scoring, dataflow verification and oversight are <b>unchanged</b>.</li>
+        <li>Fires only <b>after oversight finalizes</b> each finding's <code>rule_id</code> + <code>cwe</code> and dataflow sets its verification state, so every input is final.</li>
+        <li>Computes a severity <b>rank (0–100)</b> deterministically from the CVSS vector, dataflow reachability (confirmed / unverified) and confidence — no LLM, no network.</li>
+        <li>Decides <b>novelty by coverage</b>: a finding is novel <b>only if no existing engine — SAST, DAST or SCA — can traditionally detect its rule</b>. Anything an engine covers is tagged with the covering engine(s) in <code>detectableBy</code> (a list — some rules, e.g. SSRF, are found by both SAST <i>and</i> DAST) and marked <i>not</i> novel; the rest is classed by CWE. (Every finding here was detected by the LLM — <code>detectableBy</code> is a capability label on the rule, and doubles as a correlation datapoint against a real SAST/DAST/SCA result set.)</li>
+        <li>Writes the fields back onto each result: <b><code>rank</code> at the top level</b>, the rest into <code>properties</code>. Lookups stay out of the core rules file, so the scan's embedding step is untouched. <b>Additive only</b> — nothing is removed, reordered, or filtered.</li>
+        <li>Cross-references SCA findings (e.g. <code>Vulnerable Software Version</code>) against the <b>CISA KEV</b> catalog — fetched <b>once</b>, held in memory — and sets <code>exploitable</code> + <code>cisa_kev</code> when the CVE is <i>known-exploited in the wild</i>. (A confirmed PoC-kit run is the other exploitability source. Reachability/rank is prioritization; <b>this</b> is evidence of real exploitation.)</li>
+        <li>The UI (this mock) <b>sorts on rank</b> and <b>filters on novelty and exploitability</b> (exploitable → then narrow to KEV).</li>
+      </ol>
+      <h3 style="margin-top:16px">State column <span class="cmt">(dataflow verification)</span></h3>
+      <div class="statelegend">
+        <div><span class="state TP">TP</span> <span>dataflow agent <b>confirmed</b> the path — verified reachable <span class="cmt">(→ reachability 1.00)</span></span></div>
+        <div><span class="state NEW">NEW</span> <span>not dataflow-verified, or needs no dataflow to stand — the default <span class="cmt">(→ 0.75 / 0.45)</span></span></div>
+        <div><span class="state UNK">UNK</span> <span>dataflow tried but <b>could not confirm</b> — unverified, confidence lowered <span class="cmt">(→ 0.20)</span></span></div>
+      </div>
+    </div>
+    <div>
+      <h3>Rank formula <span class="cmt">(severity, 0–100 · deterministic)</span></h3>
+      <div class="formula">
+        <div class="eq">rank = 100 × ( <b>0.50</b>·S + <b>0.35</b>·R + <b>0.15</b>·C )<span class="cmt">   → clamped 0–100</span></div>
+        <div class="leg">
+          <div><span class="f">S</span> <b>Severity</b> = 0.7·(CVSS&nbsp;base/10) + 0.3·E <span class="cmt">— E = mean of the exploitability sub-vector (AV, AC, PR, UI), de-ties equal CVSS scores</span></div>
+          <div><span class="f">R</span> <b>Reachability</b> <span class="cmt">— from dataflow:</span> 1.00 confirmed (TP) · 0.75 no dataflow needed · 0.45 unverified (NEW) · 0.20 unconfirmed (UNK)</div>
+          <div><span class="f">C</span> <b>Confidence</b> = high 1.0 · medium 0.6 · low 0.3</div>
+        </div>
+      </div>
+      <h3>Added to each SARIF result <span class="cmt">(highlighted = new)</span></h3>
+<div class="snip">{
+  "ruleId": "Improper Check for Unusual or Exceptional Conditions",
+  "level": "error",
+  "baselineState": "TP",
+<span class="add">  "rank": 91.2,                            <span class="cmt">// NEW · severity 0–100</span></span>
+  "properties": {
+    "cvssv3BaseScore": 7.5,
+    "cvssv3BaseVector": "AV:N/AC:L/PR:N/UI:N/...",
+    "confidence": "high",
+    "requiresDataflow": true,
+    "cwe": 754,
+<span class="add">    "sastBlindSpot": true,                 <span class="cmt">// NEW · novel? (no engine detects it)</span></span>
+<span class="add">    "noveltyClass": "fail-open",           <span class="cmt">// NEW · which class</span></span>
+<span class="add">    "detectableBy": [],                    <span class="cmt">// NEW · [] = novel; else e.g. ["sast","dast"]</span></span>
+<span class="add">    "pqcExposure": false,                  <span class="cmt">// NEW · quantum-vulnerable crypto?</span></span>
+<span class="add">    "exploitable": false,                  <span class="cmt">// NEW · known-exploited? (KEV or PoC-kit)</span></span>
+<span class="add">    "cisa_kev": false                      <span class="cmt">// NEW · CVE on CISA KEV list</span></span>
+  }
+}</div>
+    </div>
+  </div>
+</details>
+
+<div class="controls">
+  <div class="ctl">
+    <label>Filter 1 — Rank <span class="val" id="rank-note">(all)</span></label>
+    <input type="text" id="rank" placeholder="e.g.  >80   >=90   <50   100" autocomplete="off">
+  </div>
+  <div class="ctl">
+    <label>Filter 2 — Novelty</label>
+    <select id="nov">
+      <option value="__all">All findings</option>
+      <option value="__novel">Novel only (blind-spot)</option>
+    </select>
+  </div>
+  <div class="ctl">
+    <label>Filter 3 — Exploitability</label>
+    <div style="display:flex;gap:16px;align-items:center;padding-top:7px">
+      <label style="font-weight:400;text-transform:none;letter-spacing:0;font-size:13px"><input type="checkbox" id="expl"> Exploitable</label>
+      <label style="font-weight:400;text-transform:none;letter-spacing:0;font-size:13px"><input type="checkbox" id="kevOnly"> ↳ CISA KEV</label>
+    </div>
+  </div>
+  <div class="ctl">
+    <label>Sort by</label>
+    <select id="sort">
+      <option value="rank">Rank (most severe first)</option>
+      <option value="cvss">CVSS</option>
+    </select>
+  </div>
+  <div class="ctl">
+    <label>Search rule / file</label>
+    <input type="search" id="q" placeholder="e.g. privilege, crypto, .c">
+  </div>
+  <div class="ctl">
+    <label><input type="checkbox" id="pqc"> PQC only</label>
+  </div>
+</div>
+
+<div class="wrap">
+  <table>
+    <thead><tr>
+      <th data-k="rank">Rank</th>
+      <th data-k="cls">Novelty class</th>
+      <th data-k="det">Detectable by</th>
+      <th data-k="pqc">PQC</th>
+      <th data-k="exploitable">Exploitable</th>
+      <th data-k="cvss">CVSS</th>
+      <th data-k="conf">Conf</th>
+      <th data-k="state">State</th>
+      <th data-k="rule">Rule</th>
+      <th data-k="cwe">CWE</th>
+      <th data-k="loc">Location</th>
+      <th data-k="msg">Message</th>
+    </tr></thead>
+    <tbody id="tb"></tbody>
+  </table>
+  <div id="empty" class="empty" style="display:none">No findings match the current filters.</div>
+</div>
+
+<script>
+const DATA = [{"rank": 0.0, "cls": null, "blind": false, "det": null, "pqc": false, "cvss": null, "conf": null, "state": null, "rule": "R1", "cwe": null, "cve": null, "exploitable": false, "kev": false, "loc": "</script><script>window.__VAPT_PREVIEW_XSS__=1</script>:10", "msg": "</script><script>window.__VAPT_PREVIEW_XSS__=1</script>"}];
+const CLASSES = [];
+const CLASS_COLORS = {
+  "authz":"#f0785a","authn":"#f0a05a","business-logic":"#ef5b8d","fail-open":"#e05b5b",
+  "concurrency":"#5bb0ef","dynamic-codegen":"#b98bff","cross-boundary":"#5bd6c0",
+  "crypto-pqc":"#9b8bff","side-channel":"#c0c05b","traditional":""
+};
+const nov = document.getElementById('nov');
+CLASSES.filter(c=>c!=="traditional").forEach(c=>{
+  const o=document.createElement('option'); o.value="cls:"+c; o.textContent="Class: "+c; nov.appendChild(o);
+});
+
+const rankEl=document.getElementById('rank'), qEl=document.getElementById('q'),
+      pqcEl=document.getElementById('pqc'), sortEl=document.getElementById('sort'),
+      explEl=document.getElementById('expl'), kevEl=document.getElementById('kevOnly');
+
+function rankColor(v){ const h=(v/100)*120; return `hsl(${120-h},75%,52%)`; } // high rank -> red
+
+// Parse a rank expression like ">80", ">=90", "<50", "=100", or a bare number.
+function rankPred(raw){
+  const s=(raw||"").trim();
+  if(!s) return {fn:()=>true, note:"(all)"};
+  const m=s.match(/^(>=|<=|>|<|=)?\s*(\d+(?:\.\d+)?)$/);
+  if(!m) return {fn:()=>true, note:"(invalid — showing all)"};
+  const op=m[1]||">=", v=parseFloat(m[2]);
+  const ops={">":x=>x>v,">=":x=>x>=v,"<":x=>x<v,"<=":x=>x<=v,"=":x=>x===v};
+  return {fn:ops[op], note:`${op} ${v}`};
+}
+
+function render(){
+  const rp=rankPred(rankEl.value), q=qEl.value.toLowerCase().trim(),
+        pqcOnly=pqcEl.checked, mode=nov.value, sortK=sortEl.value;
+  document.getElementById('rank-note').textContent=rp.note;
+
+  let rows=DATA.filter(d=>{
+    if(!rp.fn(d.rank)) return false;
+    if(pqcOnly && !d.pqc) return false;
+    if(mode==="__novel" && !d.blind) return false;
+    if(mode.startsWith("cls:") && d.cls!==mode.slice(4)) return false;
+    if(explEl.checked && !d.exploitable) return false;   // stackable: exploitable...
+    if(kevEl.checked && !d.kev) return false;             // ...then refine to KEV
+    if(q && !((d.rule||"").toLowerCase().includes(q) || (d.loc||"").toLowerCase().includes(q))) return false;
+    return true;
+  });
+  rows.sort((a,b)=> (b[sortK]??0) - (a[sortK]??0));
+
+  const tb=document.getElementById('tb');
+  tb.innerHTML = rows.map(d=>{
+    const col=CLASS_COLORS[d.cls]||"";
+    const chip = d.cls==="traditional"
+      ? `<span class="chip trad">traditional</span>`
+      : `<span class="chip" style="background:${col}22;color:${col}">${d.cls}</span>`;
+    return `<tr class="${d.exploitable?'exploit':(d.blind?'novel':'')}">
+      <td><span class="rankbar"><span class="track"><span class="fill" style="width:${d.rank}%;background:${rankColor(d.rank)}"></span></span><b>${d.rank}</b></span></td>
+      <td>${chip}</td>
+      <td>${(d.det||[]).map(e=>'<span class="chip trad" style="margin-right:4px">'+e+'</span>').join('')}</td>
+      <td class="pqc">${d.pqc?'⚛':''}</td>
+      <td>${d.kev ? '<span class="chip kev">⚠ KEV</span>' : (d.exploitable ? '<span class="chip kev">exploitable</span>' : '')}</td>
+      <td class="num">${d.cvss??''}</td>
+      <td>${d.conf??''}</td>
+      <td><span class="state ${d.state||'NEW'}">${d.state||''}</span></td>
+      <td>${d.rule||''}</td>
+      <td class="num">${d.cwe??''}</td>
+      <td><code>${d.loc||''}</code></td>
+      <td class="msg">${(d.msg||'').replace(/</g,'&lt;')}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('empty').style.display = rows.length? 'none':'block';
+  document.getElementById('s-total').textContent=DATA.length;
+  document.getElementById('s-novel').textContent=DATA.filter(d=>d.blind).length;
+  document.getElementById('s-shown').textContent=rows.length;
+  document.getElementById('s-pqc').textContent=DATA.filter(d=>d.pqc).length;
+  document.getElementById('s-kev').textContent=DATA.filter(d=>d.kev).length;
+}
+[rankEl,qEl,pqcEl,nov,sortEl,explEl,kevEl].forEach(e=>e.addEventListener('input',render));
+document.querySelectorAll('th[data-k]').forEach(th=>th.addEventListener('click',()=>{
+  sortEl.value = ['rank','cvss'].includes(th.dataset.k)? th.dataset.k : sortEl.value; render();
+}));
+render();
+</script>
+</body>
+</html>

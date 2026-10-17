@@ -558,6 +558,49 @@ CA bundle note, checked at the same time: 150 roots ship, one of which expired o
 2025-05-12. Expired roots are ignored by path building, so this is hygiene, not a
 finding.
 
+### Just the HTML preview — can untrusted results inject script?
+
+`--result-preview true` writes a self-contained HTML report. This checks whether
+values from the analysed material survive into that document as markup.
+
+```bash
+PYTHONHOME=$WORK/pyhome \
+PYTHONPATH=$WORK/merged:$WORK/signal-pyarmor-linux-x86_64_extracted/base_library.zip \
+$WORK/py313host poc/19-check-xss.py
+```
+
+`utils/html_preview` lives inside the PyArmor archive, so this one needs the
+reconstructed host — the check imports the shipped renderer rather than a copy.
+
+```
+== A. control: a benign document ==
+   document 16943 bytes, 1 script element(s)
+   PASS - exactly one script element, as the template intends
+
+== B. result message text ==
+   payload : </script><script>window.__VAPT_PREVIEW_XSS__=1</script>
+   document 16987 bytes, 2 script element(s)
+     [0] 'const DATA = [{"rank": 0.0, "cls": null, ...'
+     [1] 'window.__VAPT_PREVIEW_XSS__=1'
+   PASS - the payload forms a SECOND script element
+   PASS - that element's body is the attacker's JavaScript
+   ...
+   preview injection reproduced: 5/5
+```
+
+Five checks: a benign control, message text, `src_label`, artifact path, and
+whether a repository can actually produce that path from legal components.
+
+The generated document is kept at `poc/captures/19-preview-xss.html`. **Do not
+open it in a browser** unless you want the payload to run — that is the finding.
+
+The template has four substitution points — `const DATA = __DATA__;`,
+`__CLASSES__`, and `<code>__SRC__</code>` — filled with `json.dumps(...)` and a
+raw `src_label`. JSON escapes quotes but not `<`, so `</script>` ends the script
+element. The artifact path is the interesting vector: a scanned repository
+controls it, and `</script>` can be built from three legal path components
+(`<`, `script><script>...<`, `script>`), so no SARIF import is needed.
+
 ## 1. Obtain the target and verify it
 
 The binary is stored in this repository as two parts on the `binary-drop` branch
