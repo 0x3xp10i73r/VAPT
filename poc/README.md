@@ -644,6 +644,65 @@ code blocks, URLs expanded after links).
 `f08-client-brief.md` is a separate, shorter document for the client
 conversation about F-08; build it the same way if you want it as HTML.
 
+## Opening the preview the tool writes
+
+This is the tool's own HTML report — not the assessment document above.
+
+```bash
+./signal-pyarmor-linux-x86_64 ./target \
+  --prioritization true --result-preview true \
+  --report-file results.sarif
+```
+
+`--help` describes it as a "self-contained HTML preview (rank/novelty/
+exploitability, filterable)" written **alongside the SARIF report**, and it requires
+`--prioritization` because it renders fields that stage produces. So the two files
+land in the same directory, named after `--report-file`: with the default
+`results.sarif`, the preview is `results.html`. (The CLI's naming code is inside
+armoured modules, so the name could not be read out of the binary; the placement
+is the part `--help` states. If your run produces a different name, it is the
+`.html` file next to `results.sarif`.)
+
+This is the document that carries **F-18**: the renderer substitutes the source
+label and result fields into markup and into a script block without escaping.
+
+A complete run is not possible in this sandbox — the scan aborts at the tokenizer
+fetch before any report is written (F-05) — so the same document is produced
+through the same shipped renderer:
+
+```bash
+python3 poc/20-make-preview.py
+```
+
+```
+renderer : /tmp/vapt/merged/utils/html_preview.py
+scanned  : /tmp/poc-preview-c_0qy3yq/</script><script>document.title='XSS';...
+preview  : /home/user/VAPT/poc/captures/results.html (17361 bytes)
+sarif    : /home/user/VAPT/poc/captures/results.sarif
+
+script elements: 2 (1 payload, 1 other)
+payload script : 226 bytes, intact
+report data    : clean - the preview's own JS still parses
+execution check: PASS {"title":"XSS","flag":1,"injected":1}
+```
+
+The payload rides in the **name of the scanned directory**, which becomes the
+report's source label; nothing is imported. Open the committed artefact:
+
+```bash
+xdg-open poc/captures/results.html          # Linux
+explorer.exe poc/captures/results.html      # WSL
+```
+
+A normally rendered preview (table, filters) plus a red **XSS EXECUTED** banner
+and the title `XSS` mean the payload ran. That is the finding, not a bug in the
+PoC.
+
+**Do not open a preview produced from untrusted material in your normal browser
+profile.** The file executes whatever the scanned repository put into it, and the
+report contains the findings themselves. Use a throwaway profile or a container
+with no network and no session.
+
 ## 1. Obtain the target and verify it
 
 The binary is stored in this repository as two parts on the `binary-drop` branch
