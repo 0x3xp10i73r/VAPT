@@ -828,6 +828,13 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
 # start this with a process manager or a second shell (see the note below)
 python3 $POC/07-poc-f06-tls-endpoint.py 8443 "$WORK/poc-f06-requests.log"
 
+# the listener is dual-protocol: the first byte decides. A TLS ClientHello is
+# served with the self-signed certificate (the F-06 path, unchanged); anything
+# else is answered as plain HTTP, which is what makes the same port usable in a
+# browser preview (the platform proxy speaks plain HTTP to the sandbox).
+curl -k https://127.0.0.1:8443/v1/models    # PoC path
+curl    http://127.0.0.1:8443/              # request log as an HTML page
+
 # a config pointing at the HTTPS endpoint
 sed 's#http://127.0.0.1:8899/v1#https://127.0.0.1:8443/v1#' poc-byo.signal > poc-byo-tls.signal
 : > poc-f06-requests.log
