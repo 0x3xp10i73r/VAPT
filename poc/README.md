@@ -292,6 +292,62 @@ It runs shipped product code, like `poc/05`; read both before running them.
 `poc/05` is the same execution check with more commentary, `poc/12` is the
 disassembler if you want to read the bytecode yourself.
 
+### Just F-04 — the bundled TLS stack
+
+```bash
+export PYTHONHOME=$WORK/pyhome
+export PYTHONPATH=$WORK/merged:$WORK/signal-pyarmor-linux-x86_64_extracted/base_library.zip
+$WORK/py313host poc/15-check-f04.py
+```
+
+Three claims, checked separately; exit code 0 only if all three hold:
+
+```
+== A. what ships: every OpenSSL build in the archive ==
+   libpython3.13.so.1.0                                 OpenSSL 3.0.16 11 Feb 2025
+   psycopg2_binary.libs/libcrypto-2e26a48f.so.3         OpenSSL 3.5.4 30 Sep 2025
+   PASS - the interpreter's TLS stack is statically linked inside libpython3.13.so.1.0: 3.0.16
+   PASS - a second, independent build ships in psycopg2_binary.libs/…: 3.5.4 (psycopg2 / --cache-database only)
+
+== B. what runs: the bundled interpreter's own ssl module ==
+   interpreter: Python 3.13.5
+   ssl        : OpenSSL 3.0.16 11 Feb 2025
+   PASS - the running interpreter reports the version found in the archive
+   PASS TLS default: verify_mode = CERT_REQUIRED
+   PASS TLS default: check_hostname = True
+   PASS TLS default: minimum_version >= TLS 1.2
+
+== C. advisories: shipped versions vs the fixed-version boundaries ==
+   shipped 3.0.x: 3.0.16   newest 3.0.x at assessment time: 3.0.21   -> 5 patch release(s) behind
+   CVE-2025-15467  High      3.0.19      IN RANGE    3.5.5 in range
+   CVE-2025-9230   Moderate  3.0.18      IN RANGE    3.5.4 fixed
+   …
+   PASS 7 of 7 advisories list 3.0.16 inside their affected range
+   PASS 3.0.16 is behind 3.0.21 (5 patch releases)
+
+   F-04 reproduced: 3/3
+```
+
+Check B refuses to co-operate if you run it with your own Python instead of
+`py313host` — it compares what `ssl` reports against the banner in the archive
+and stops with "this script is not running under the reconstructed host" rather
+than attributing your system OpenSSL to the bundle.
+
+**What this proves and what it does not.** It proves the version and the patch
+gap: the TLS stack every HTTPS request uses is 3.0.16, five patch releases
+behind, and each advisory in the report's table has its fixed-version boundary
+above it, so the whole backlog ships with the tool. It does **not** prove that
+any of those CVEs is reachable: the High-severity items are in CMS, PKCS#12 and
+PKCS#7 parsing, Python's `ssl` module exposes TLS only, and the CLI does not
+parse those formats through it. No CVE proof-of-concept is included or implied —
+the report scores F-04 Medium (5.6) for exactly that reason. Note also the
+contrast the check surfaces on a current host: your own system OpenSSL is
+usually *newer* than the one shipped in the binary.
+
+The advisory table ages faster than the binary: `LATEST_30` and `ADVISORIES`
+at the top of the script are a snapshot of 2026-10-16 and should be refreshed
+before the numbers are quoted later.
+
 ## 1. Obtain the target and verify it
 
 The binary is stored in this repository as two parts on the `binary-drop` branch
