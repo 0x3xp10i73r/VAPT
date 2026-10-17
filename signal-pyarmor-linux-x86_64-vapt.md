@@ -201,6 +201,8 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
 
   Three things are established by execution: command chaining (`;`) is interpreted, a **file was written outside the workspace**, and the payload ran as the scanning process itself — whose supplementary group list here includes `sudo`. `cwd` is a working directory, not a sandbox.
 
+- **Where the key may come from — and whether `.env` helps.** The byo-mode validator accepts a key from the flag or from the config file, and the file channel demonstrably works: a config carrying `key = CANARY_F21_CONFIG` with **no** `--llm-key` sent `Authorization: Bearer CANARY_F21_CONFIG` to the endpoint. A `.env` in the working directory is **not** read: with the same config minus the key and `LLM_KEY`, `SIGNAL_LLM_KEY` and `OPENAI_API_KEY` present in `.env`, the run still exits 117 with `At least one LLM API key must be set` and sends zero requests. The safe alternative is therefore `--config` with mode 0600, not a `.env`. Two details push users towards the unsafe channel: the validation error names only `--llm-key` and the per-agent flags (never the config file), and the tool does not check the config file's permissions — a world-readable `0644` file is accepted without comment.
+
 - **Steps to reproduce manually.**
   1. Obtain the binary from this repository's release and verify it: `sha256sum signal-pyarmor-linux-x86_64` → must equal the digest in §1.
   2. Unpack the CArchive: `pyinstxtractor-ng signal-pyarmor-linux-x86_64` → produces `signal-pyarmor-linux-x86_64_extracted/`.
@@ -605,6 +607,30 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
 
   The credential is world-readable for the lifetime of the process, independently of the tool's own logging. For contrast, the same run's log contains **0** occurrences of the raw secret and shows `--llm-key=********`.
 
+  The whole question is one command — `poc/21-check-argv-keys.py` starts the binary four times, reads `/proc/<pid>/cmdline` the way any local user would, and proves both the alternative and the negative:
+
+  ```
+  == A. key on the command line ==
+     pid 3906, exit 63
+     /proc/3906/cmdline mode: 0o444
+     argv[4]: --llm-key
+     argv[5]: CANARY_ARGV_F21_ARGV
+     PASS - any local user can read the key from /proc
+  == B. the tool's own log ==
+     masked occurrences: 1, raw occurrences: 0
+     PASS - logs are redacted; the exposure is the process table
+  == C. key from --config only ==
+     exit 1, 5 request(s) at the endpoint
+     Authorization: Bearer CANARY_F21_CONFIG
+     PASS - a config file is a working alternative to the flag
+  == D. .env in the working directory ==
+     exit 117, requests carrying a .env canary: 0
+     error: At least one LLM API key must be set
+     PASS - .env is not a supported channel for this key
+
+     argv/config key handling: 4/4
+  ```
+
 - **Steps to reproduce manually.**
   1. Launch the tool with a canary key and an endpoint that does not answer promptly, so the process persists:
      `./signal-pyarmor-linux-x86_64 --llm-mode byo --llm-uri http://10.255.255.1:9/v1 --llm-key CANARY_ARGV_F07_SECRET --llm-model m --llm-timeout 25 --check-llm true ./target &`
@@ -614,7 +640,7 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
 
 - **Impact.** Disclosure of LLM and cloud credentials to a local user or to CI log retention.
 
-- **Recommendation.** Prefer environment variables, a file descriptor, or a secrets file; document `--llm-key` as discouraged. Extend the existing redaction to panic/abort handlers that may print `sys.argv`.
+- **Recommendation.** Make the config file the documented route: `--config` with mode 0600, and name it in the byo-mode validation error, which today advertises only the two flag forms. Do not add a `.env` loader — the config file is this tool's equivalent and already works. If the flag must remain, add `--llm-key-file <path>` or `--llm-key-fd <n>` and warn when a key arrives in `argv`. Reject a config file that group or other can read, and extend the existing log redaction to panic/abort handlers that may print `sys.argv`.
 
 ---
 
@@ -1511,6 +1537,7 @@ Per-script invocation, required environment and expected output are in
 | `18-check-loading.py` | F-17 | Loader search path, setuid/capabilities, the run-time extraction directory's mode, `_PYI_*` spoofing attempts and the embedded PyInstaller version against GHSA-9fxf-4qw3-ghmr — `loading/privilege reproduced: 4/4` |
 | `19-check-xss.py` | F-18 | Renders a document through the shipped `utils/html_preview` with hostile message text, rule id, `src_label` and artifact path, then parses the result and counts script elements; also builds a real directory tree whose relative path is the payload — `preview injection reproduced: 5/5` |
 | `20-make-preview.py` | F-18 | Builds the `--result-preview` document through the shipped renderer with the payload as the scanned directory's name, writes `poc/captures/results.html`, then checks the payload script element, that the report data block is untouched, and executes the extracted script under Node with a stub DOM - `execution check: PASS` |
+| `21-check-argv-keys.py` | F-07 | Reads a canary `--llm-key` out of `/proc/<pid>/cmdline` as any local user, confirms the tool's own log masks it, then proves a config-file key reaches the endpoint unchanged and that a `.env` is not consulted - `argv/config key handling: 4/4` |
 | `06-poc-f02-workspace.py` | F-02 | Path traversal via the GUID, symlink adoption under `exist_ok=True`, default mode `0o755` |
 | `07-poc-f06-tls-endpoint.py` | F-06 | Logging HTTPS endpoint with a self-signed certificate; captures the requests that verification-off lets through |
 | `08-collect-runtime-versions.py` | F-04, F-09, F-11, F-12 | Prints every security-relevant linked/loaded version from inside the reconstructed runtime |

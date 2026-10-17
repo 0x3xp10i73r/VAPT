@@ -703,6 +703,39 @@ profile.** The file executes whatever the scanned repository put into it, and th
 report contains the findings themselves. Use a throwaway profile or a container
 with no network and no session.
 
+## Where to put the API key
+
+`--llm-key` (and the per-agent `--llm-<agent>-key`) puts the key in the process
+argument list. `/proc/<pid>/cmdline` is mode `0444`, so any local user can read it
+for as long as the process lives, and the shell keeps it in history. That is
+**F-07**.
+
+The tool does **not** read a `.env`. What it does support is the config file —
+the same file `--config` already takes:
+
+```ini
+[LLM]
+mode = byo
+uri = https://llm.example/v1
+model = your-model
+key = sk-...
+```
+
+```bash
+chmod 600 .signal
+./signal-pyarmor-linux-x86_64 ./target --config ./.signal --prioritization true
+```
+
+Verified end to end: a key supplied only through `--config` reaches the endpoint as
+`Authorization: Bearer <key>`; a `.env` holding `LLM_KEY`, `SIGNAL_LLM_KEY` and
+`OPENAI_API_KEY` is ignored and the run still exits 117 with `At least one LLM API
+key must be set`. The tool also does not check the config file's permissions, so
+`chmod 600` is on you.
+
+```bash
+python3 poc/21-check-argv-keys.py    # 4/4: argv readable, log redacted, config works, .env ignored
+```
+
 ## 1. Obtain the target and verify it
 
 The binary is stored in this repository as two parts on the `binary-drop` branch
