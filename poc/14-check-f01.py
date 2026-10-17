@@ -283,6 +283,16 @@ def check_execution(extract, pyz):
 
 
 def main():
+
+    # Run on the reconstructed CPython host when one is available: these checks need
+    # the bundled interpreter (armoured modules, 3.13 bytecode, the shipped ssl).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        import _host
+        _host.ensure(__file__)
+    except ImportError:
+        pass
+
     extract = find_extract()
     if not extract:
         print("no extraction found - run poc/00-setup.sh first (see poc/README.md)")

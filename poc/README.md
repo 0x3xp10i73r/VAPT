@@ -228,6 +228,14 @@ and the stage only skips if even that does not reproduce it.
 
 ### Just F-01 — the host shell
 
+> `14`, `15` and `19` need the reconstructed interpreter. You no longer have to
+> set anything up for them: each one finds `py313host` next to the checkout (or
+> under `$WORK`, or `/tmp/vapt`) and re-executes itself there, so plain
+> `python3 poc/14-check-f01.py` is enough. `poc/_host.py` does the lookup.
+> `$WORK` exists only in the shell that ran `poc/00-setup.sh`, which is why a
+> bare `$WORK/...` command fails with "no such file or directory: /py313host".
+
+
 One script checks the whole chain of F-01 and nothing else:
 
 ```bash
@@ -564,13 +572,26 @@ finding.
 values from the analysed material survive into that document as markup.
 
 ```bash
+cd ~/VAPT
+python3 poc/19-check-xss.py        # finds py313host itself and re-execs there
+```
+
+`utils/html_preview` lives inside the PyArmor archive, so it only imports on the
+reconstructed host. The script locates `py313host` next to the checkout (or under
+`$WORK`, or `/tmp/vapt`) and re-executes itself with the right `PYTHONHOME` and
+`PYTHONPATH`, so no environment needs to be set.
+
+If you prefer to do it by hand, set the variables explicitly — `$WORK` is only
+defined in the shell that ran `poc/00-setup.sh`, and a placeholder like `...`
+will not expand:
+
+```bash
+cd ~/VAPT
+WORK=$PWD
 PYTHONHOME=$WORK/pyhome \
 PYTHONPATH=$WORK/merged:$WORK/signal-pyarmor-linux-x86_64_extracted/base_library.zip \
 $WORK/py313host poc/19-check-xss.py
 ```
-
-`utils/html_preview` lives inside the PyArmor archive, so this one needs the
-reconstructed host — the check imports the shipped renderer rather than a copy.
 
 ```
 == A. control: a benign document ==

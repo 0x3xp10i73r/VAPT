@@ -19,12 +19,19 @@ test:
                     relative path that IS the payload, so scanning an untrusted
                     repository is enough - no SARIF import required
 
-This module is inside the PyArmor archive, so the check must run on the
-reconstructed host:
+`utils.html_preview` lives inside the PyArmor archive, so it only imports on the
+reconstructed host. Just run it with your normal interpreter - the script finds
+`py313host` next to the checkout (or under $WORK, or /tmp/vapt) and re-executes
+itself there with the right PYTHONHOME/PYTHONPATH:
 
-    PYTHONHOME=<work>/pyhome \\
-    PYTHONPATH=<work>/merged:<extract>/base_library.zip \\
-    <work>/py313host poc/19-check-xss.py
+    python3 poc/19-check-xss.py
+
+To do it by hand instead, set the paths explicitly - do not paste placeholders:
+
+    WORK=~/VAPT
+    PYTHONHOME=$WORK/pyhome \\
+    PYTHONPATH=$WORK/merged:$WORK/signal-pyarmor-linux-x86_64_extracted/base_library.zip \\
+    $WORK/py313host poc/19-check-xss.py
 
 Exit codes: 0 = reproduced, 1 = a claim failed, 2 = cannot import the module.
 """
@@ -82,15 +89,98 @@ def verdict(ok, text):
     return ok
 
 
+def sarif(message="hello", uri="src/a.py", rule="R1"):
+    return {"version": "2.1.0", "runs": [{
+        "tool": {"driver": {"name": "signal", "rules": [
+            {"id": rule, "name": "r", "shortDescription": {"text": "t"}}]}},
+        "results": [{
+            "ruleId": rule, "level": "warning",
+            "message": {"text": message},
+            "locations": [{"physicalLocation": {
+                "artifactLocation": {"uri": uri},
+                "region": {"startLine": 10}}}],
+        }],
+    }]}
+
+
+def verdict(ok, text):
+    print("   %s %s" % ("PASS -" if ok else "FAIL -", text))
+    return ok
+
+
+def find_host():
+    """Locate the reconstructed CPython host built by poc/00-setup.sh.
+
+    Returns (py313host, pyhome, merged, base_library) or None. Searches $WORK
+    first, then the checkout this script lives in, then the usual sandbox path.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = []
+    if os.environ.get("WORK"):
+        candidates.append(os.environ["WORK"])
+    candidates += [os.path.dirname(here), os.getcwd(), "/tmp/vapt"]
+
+    for root in candidates:
+        host = os.path.join(root, "py313host")
+        home = os.path.join(root, "pyhome")
+        merged = os.path.join(root, "merged")
+        bl = os.path.join(root, "signal-pyarmor-linux-x86_64_extracted",
+                          "base_library.zip")
+        if (os.path.isfile(host) and os.access(host, os.X_OK)
+                and os.path.isdir(home) and os.path.isdir(merged)
+                and os.path.isfile(bl)):
+            return host, home, merged, bl
+    return None
+
+
+def reexec_on_host():
+    """Re-run this script under py313host so the armoured module can import.
+
+    Returns normally only when no host was found (the caller then prints
+    instructions); on success the process has been replaced.
+    """
+    if os.environ.get("_POC19_REEXEC"):
+        return False                              # already tried - do not loop
+    found = find_host()
+    if not found:
+        return False
+    host, home, merged, bl = found
+    env = dict(os.environ)
+    env["PYTHONHOME"] = home
+    env["PYTHONPATH"] = merged + os.pathsep + bl
+    env["_POC19_REEXEC"] = "1"
+    print("running on the reconstructed host, because utils.html_preview is armoured")
+    print("   host      : %s" % host)
+    print("   PYTHONHOME: %s" % home)
+    print("   PYTHONPATH: %s" % env["PYTHONPATH"])
+    print()
+    sys.stdout.flush()
+    try:
+        os.execve(host, [host, os.path.abspath(__file__)] + sys.argv[1:], env)
+    except OSError as exc:
+        print("could not start %s: %s" % (host, exc))
+        return False
+
+
 def main():
+
+    # Run on the reconstructed CPython host when one is available: these checks need
+    # the bundled interpreter (armoured modules, 3.13 bytecode, the shipped ssl).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        import _host
+        _host.ensure(__file__)
+    except ImportError:
+        pass
+
     try:
         import utils.html_preview as hp
     except ImportError as exc:
         print("cannot import utils.html_preview: %s" % exc)
-        print("this module lives inside the PyArmor archive - run the check on the")
-        print("reconstructed host:")
-        print("  PYTHONHOME=<work>/pyhome PYTHONPATH=<work>/merged:<extract>/base_library.zip \\")
-        print("  <work>/py313host poc/19-check-xss.py")
+        print()
+        print("That module is inside the PyArmor archive, so it only imports on the")
+        print("reconstructed host. None was found - run poc/00-setup.sh first, or set")
+        print("WORK to the directory it built into, then retry.")
         return 2
 
     out = pathlib.Path(__file__).resolve().parent / "captures"

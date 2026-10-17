@@ -1194,7 +1194,7 @@ The release is distributed with a SHA-256 in the release metadata and no signatu
 - **Evidence / PoC.** `poc/19-check-xss.py` drives the shipped renderer (imported from the archive under the reconstructed host, so the real template is used) and parses the produced document:
 
   ```
-  $ <work>/py313host poc/19-check-xss.py
+  $ python3 poc/19-check-xss.py          # re-execs on <work>/py313host itself
   == A. control: a benign document ==
      document 16943 bytes, 1 script element(s)
      PASS - exactly one script element, as the template intends
