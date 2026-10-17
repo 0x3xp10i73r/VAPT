@@ -622,6 +622,28 @@ element. The artifact path is the interesting vector: a scanned repository
 controls it, and `</script>` can be built from three legal path components
 (`<`, `script><script>...<`, `script>`), so no SARIF import is needed.
 
+## Reading the report
+
+`signal-pyarmor-linux-x86_64-vapt.md` is Markdown — 1,530 lines, 8 tables. Any
+Markdown viewer renders it. If you want something you can attach or read without
+a preview pane:
+
+```bash
+./poc/build-report-html.sh          # -> signal-pyarmor-linux-x86_64-vapt.html
+./poc/build-report-html.sh --open   # same, with the path printed last
+```
+
+The result is a single self-contained file — CSS embedded, no network, no
+external assets — with dark-mode support and print rules. Open it by
+double-clicking, or `xdg-open signal-pyarmor-linux-x86_64-vapt.html`.
+
+To produce a PDF: open the HTML in a browser and use Print → Save as PDF. The
+stylesheet already carries `@media print` rules (page-break hints on tables and
+code blocks, URLs expanded after links).
+
+`f08-client-brief.md` is a separate, shorter document for the client
+conversation about F-08; build it the same way if you want it as HTML.
+
 ## 1. Obtain the target and verify it
 
 The binary is stored in this repository as two parts on the `binary-drop` branch
