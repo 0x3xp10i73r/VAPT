@@ -703,38 +703,43 @@ profile.** The file executes whatever the scanned repository put into it, and th
 report contains the findings themselves. Use a throwaway profile or a container
 with no network and no session.
 
-## Where to put the API key
+## F-07 / CWE-214 — visible API key in process arguments
 
-`--llm-key` (and the per-agent `--llm-<agent>-key`) puts the key in the process
-argument list. `/proc/<pid>/cmdline` is mode `0444`, so any local user can read it
-for as long as the process lives, and the shell keeps it in history. That is
-**F-07**.
+`--llm-key` (and the per-agent `--llm-<agent>-key`) accepts literal keys. Such a
+key stays in `/proc/<pid>/cmdline` while Signal runs and may reach shell history
+and CI logs. This host's `/proc` entry was `0444` and a separate unprivileged
+account (`nobody`) read the canary. Other hosts can restrict process visibility
+via their procfs policy. The application masks its own log; that does not remove
+the key from argv.
 
-The tool does **not** read a `.env`. What it does support is the config file —
-the same file `--config` already takes:
-
-```ini
-[LLM]
-mode = byo
-uri = https://llm.example/v1
-model = your-model
-key = sk-...
-```
+Run the *single-command* PoC on Linux/WSL2 from the repository root:
 
 ```bash
-chmod 600 .signal
-./signal-pyarmor-linux-x86_64 ./target --config ./.signal --prioritization true
+env -u PYTHONHOME -u PYTHONPATH python3 poc/21-check-argv-keys.py
 ```
 
-Verified end to end: a key supplied only through `--config` reaches the endpoint as
-`Authorization: Bearer <key>`; a `.env` holding `LLM_KEY`, `SIGNAL_LLM_KEY` and
-`OPENAI_API_KEY` is ignored and the run still exits 117 with `At least one LLM API
-key must be set`. The tool also does not check the config file's permissions, so
-`chmod 600` is on you.
+It finds the exact v1.0 binary locally or reconstructs it from **this repo's
+`binary-drop` branch**, checks SHA-256, and needs no extraction, key, remote LLM,
+or tokenizer download. It creates synthetic keys, drives a loopback-only endpoint,
+and shows PASS/FAIL for argv exposure, log redaction, config-file fallback, and
+absence of automatic `.env` loading. Expected final line:
 
-```bash
-python3 poc/21-check-argv-keys.py    # 4/4: argv readable, log redacted, config works, .env ignored
+```text
+F-07 reproduced: 4/4 (CWE-214)
 ```
+
+The safer credential route is `--config` with a protected file. For example, the
+`[LLM]` section of that file can contain `key = ${SIGNAL_LLM_SECRET}`: an exported
+environment variable **is interpolated** there (five local Bearer requests with
+the canary were observed), so the config need not contain the secret itself. Have
+your secret manager set that variable. A `.env` file is **not loaded
+automatically**; a `.env` carrying `LLM_KEY`, `SIGNAL_LLM_KEY`, or
+`OPENAI_API_KEY` did not satisfy the tool's validation. If using `.env`, load it
+into the environment explicitly and keep it outside source control. Do not run
+`--llm-key "$SIGNAL_LLM_SECRET"` — the shell would expand the secret into argv;
+the generic `--llm-key '${SIGNAL_LLM_SECRET}'` was tested and sent the literal
+placeholder rather than interpolating it. Signal does not enforce config-file
+permissions: use mode `0600` if the file itself holds a key.
 
 ## 1. Obtain the target and verify it
 

@@ -10,11 +10,13 @@
 
 **Assessment type:** Static + dynamic (grey-box) review of the distributed binary in an isolated Linux sandbox. No vendor production systems were contacted. LLM endpoints were replaced with a local mock server and a local self-signed HTTPS endpoint.
 
-**Assessment date:** 16 October 2026
+**Assessment date:** 16 October 2026 (F-07 PoC rechecked 21 October 2026)
 
-**Revision 9 — 16 October 2026 (current).** Adds F-18 (`poc/19-check-xss.py`): the experimental HTML result preview substitutes result fields into a script block and markup without escaping, so untrusted scanned content can inject JavaScript into the analyst's report. Also adds F-17 and `poc/18-check-loading.py` (native-code loading, privilege context and packaging trust), and adds the embedded PyInstaller 6.20.0 to F-12 — it is inside GHSA-9fxf-4qw3-ghmr (< 6.22.1), conditional on a setuid/setgid deployment. Also: Adds focused one-command checks: `poc/16-check-f08.py` for F-08 (build provenance, ELF toolchain and shipped development material, read without executing anything; it also attributes the `.comment` stamp by hashing `.text` - the executable matches PyInstaller 6.20.0's stock Linux bootloader, so the Ubuntu 18.04 line is upstream's build container, not the vendor's), `poc/15-check-f04.py` for F-04 (every OpenSSL build in the archive attributed to its file, the runtime's own version and TLS defaults, and each advisory evaluated against its fixed-version boundary) and `poc/14-check-f01.py` for F-01: it reads the `register_workspace_tools(...)` call site out of every agent module in the shipped archive (three ask for `shell=True`, two get file tools only), disassembles `run_shell` to the exact `subprocess.run(..., shell=True, timeout=120, cwd=...)` call, and then executes the shipped tool with a metacharacter payload on the host, reporting PASS/FAIL per link (`F-01 reproduced: 3/3`). Also: phase 6 of `poc/run-all.sh` now keeps its scan target outside the checkout (a `.gitignore`d target is skipped by the scanner - the very rule F-16 documents), the suite keeps a full transcript at `<work>/poc-run.log` and repeats failed checks in its summary, and the shell scripts are committed executable. Rev 9 also adds `poc/20-make-preview.py` and the artefact it builds, `poc/captures/results.html`: the `--result-preview` document rendered by the shipped `utils/html_preview`, with the payload in the scanned directory's name and its extracted script executed under Node.
+**Revision 10 — 21 October 2026 (current).** F-07/CWE-214 now has a one-command PoC (`poc/21-check-argv-keys.py`) that retrieves the pinned binary from this repository's `binary-drop` branch if necessary, reads a synthetic credential from `/proc/<pid>/cmdline` (also as unprivileged `nobody` on this host), and verifies that the application log is redacted. It contrasts literal argv keys with a config-file key, demonstrates that `.env` is not loaded automatically, and verifies config-file `${VAR}` interpolation as a safer channel. The affected GCP option and remediation matrix were corrected accordingly.
 
-**Revision 8 — 16 October 2026 (current).** **The whole assessment is now one command.** `poc/run-all.sh` runs the offline PoCs and the four dynamic findings (F-05, F-06, F-15, F-16) in a single serial pass, starting and tearing down every listener it needs; it was verified from a fresh clone on 16 October 2026 with **11 checks passing, 0 failures, exit 0** (output transcribed in `poc/README.md`). A first run on a host *with* egress then exposed a defect in the runner itself, now fixed: phase 3 trusted the seeder's exit code, and `poc/seed-tokenizer-cache.py` returned a non-zero code after a fresh, verified fetch (`status: seeded`), so a perfectly good cache was reported as F-05 and the dynamic phases were skipped. The seeder now exits 0 once the cache is present and verified, and the runner decides success by the cache file and its pinned digest, not by any return code. Phase 5's "no docker" stage was also made host-independent: on a machine that *has* docker, the runner re-runs it with a mirror of `PATH` that omits every docker entry and observes the same refusal, which is itself the finding — the gate is a lookup, not a capability check — so the stage is no longer skipped on a typical developer or CI host. The runner
+**Revision 9 — 16 October 2026.** Adds F-18 (`poc/19-check-xss.py`): the experimental HTML result preview substitutes result fields into a script block and markup without escaping, so untrusted scanned content can inject JavaScript into the analyst's report. Also adds F-17 and `poc/18-check-loading.py` (native-code loading, privilege context and packaging trust), and adds the embedded PyInstaller 6.20.0 to F-12 — it is inside GHSA-9fxf-4qw3-ghmr (< 6.22.1), conditional on a setuid/setgid deployment. Also: Adds focused one-command checks: `poc/16-check-f08.py` for F-08 (build provenance, ELF toolchain and shipped development material, read without executing anything; it also attributes the `.comment` stamp by hashing `.text` - the executable matches PyInstaller 6.20.0's stock Linux bootloader, so the Ubuntu 18.04 line is upstream's build container, not the vendor's), `poc/15-check-f04.py` for F-04 (every OpenSSL build in the archive attributed to its file, the runtime's own version and TLS defaults, and each advisory evaluated against its fixed-version boundary) and `poc/14-check-f01.py` for F-01: it reads the `register_workspace_tools(...)` call site out of every agent module in the shipped archive (three ask for `shell=True`, two get file tools only), disassembles `run_shell` to the exact `subprocess.run(..., shell=True, timeout=120, cwd=...)` call, and then executes the shipped tool with a metacharacter payload on the host, reporting PASS/FAIL per link (`F-01 reproduced: 3/3`). Also: phase 6 of `poc/run-all.sh` now keeps its scan target outside the checkout (a `.gitignore`d target is skipped by the scanner - the very rule F-16 documents), the suite keeps a full transcript at `<work>/poc-run.log` and repeats failed checks in its summary, and the shell scripts are committed executable. Rev 9 also adds `poc/20-make-preview.py` and the artefact it builds, `poc/captures/results.html`: the `--result-preview` document rendered by the shipped `utils/html_preview`, with the payload in the scanned directory's name and its extracted script executed under Node.
+
+**Revision 8 — 16 October 2026.** **The whole assessment is now one command.** `poc/run-all.sh` runs the offline PoCs and the four dynamic findings (F-05, F-06, F-15, F-16) in a single serial pass, starting and tearing down every listener it needs; it was verified from a fresh clone on 16 October 2026 with **11 checks passing, 0 failures, exit 0** (output transcribed in `poc/README.md`). A first run on a host *with* egress then exposed a defect in the runner itself, now fixed: phase 3 trusted the seeder's exit code, and `poc/seed-tokenizer-cache.py` returned a non-zero code after a fresh, verified fetch (`status: seeded`), so a perfectly good cache was reported as F-05 and the dynamic phases were skipped. The seeder now exits 0 once the cache is present and verified, and the runner decides success by the cache file and its pinned digest, not by any return code. Phase 5's "no docker" stage was also made host-independent: on a machine that *has* docker, the runner re-runs it with a mirror of `PATH` that omits every docker entry and observes the same refusal, which is itself the finding — the gate is a lookup, not a capability check — so the stage is no longer skipped on a typical developer or CI host. The runner
 also keeps its own transcript at `<work>/poc-run.log` and repeats every failed
 check at the end of the run, so a failure can be diagnosed from the run log
 rather than by re-running it. That log is how the F-16 failure on a second host
@@ -200,8 +202,6 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
   ```
 
   Three things are established by execution: command chaining (`;`) is interpreted, a **file was written outside the workspace**, and the payload ran as the scanning process itself — whose supplementary group list here includes `sudo`. `cwd` is a working directory, not a sandbox.
-
-- **Where the key may come from — and whether `.env` helps.** The byo-mode validator accepts a key from the flag or from the config file, and the file channel demonstrably works: a config carrying `key = CANARY_F21_CONFIG` with **no** `--llm-key` sent `Authorization: Bearer CANARY_F21_CONFIG` to the endpoint. A `.env` in the working directory is **not** read: with the same config minus the key and `LLM_KEY`, `SIGNAL_LLM_KEY` and `OPENAI_API_KEY` present in `.env`, the run still exits 117 with `At least one LLM API key must be set` and sends zero requests. The safe alternative is therefore `--config` with mode 0600, not a `.env`. Two details push users towards the unsafe channel: the validation error names only `--llm-key` and the per-agent flags (never the config file), and the tool does not check the config file's permissions — a world-readable `0644` file is accepted without comment.
 
 - **Steps to reproduce manually.**
   1. Obtain the binary from this repository's release and verify it: `sha256sum signal-pyarmor-linux-x86_64` → must equal the digest in §1.
@@ -579,9 +579,10 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
 ### F-07 — Credentials accepted on the command line
 
 - **Severity / CVSS:** **Low, 3.3** — `CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N`
-- **Affected options:** `--llm-key`, `--llm-<agent>-key`, `--aws-bearer-token`, `--gcp-service-account` (accepts a base64 key), `--cache-database` (may embed a password)
+- **CWE:** **CWE-214 — Invocation of Process Using Visible Sensitive Information** (also CWE-522, broader credential-protection category). This applies when the operator supplies a *literal* key through a flag; it is not a remote attack or a claim that config-based invocations leak through argv.
+- **Affected options:** `--llm-key`, `--llm-<agent>-key`, `--aws-bearer-token`, `--gcp-service-account-key` (accepts a base64 key as well as a key-file path), `--cache-database` (may embed a password)
 
-- **Explanation.** Values passed as arguments are visible to any local user through `/proc/<pid>/cmdline`, are typically persisted in shell history, and are frequently echoed by CI runners. The tool's own logging is correct in this respect — an invocation carrying canary values logged the command line as:
+- **Explanation.** Values passed as arguments are exposed in the process argument list (`/proc/<pid>/cmdline` on this host), are typically persisted in shell history, and are frequently echoed by CI runners. Other-user visibility depends on the host's procfs restrictions; this assessment also verified a read from a separate unprivileged account (`nobody`). The tool's own logging is correct in this respect — an invocation carrying canary values logged the command line as:
 
   ```
   Invoked with command line: ./signal-pyarmor-linux-x86_64 --oversight false --dataflow false
@@ -605,17 +606,26 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
   -r--r--r-- 1 user user 0 Oct 16 07:25 /proc/5036/cmdline
   ```
 
-  The credential is world-readable for the lifetime of the process, independently of the tool's own logging. For contrast, the same run's log contains **0** occurrences of the raw secret and shows `--llm-key=********`.
+  On the assessed host, the credential was readable by a different unprivileged user while the process ran, independently of the tool's own logging. For contrast, the same run's log contains **0** occurrences of the raw secret and shows `--llm-key=********`.
 
-  The whole question is one command — `poc/21-check-argv-keys.py` starts the binary four times, reads `/proc/<pid>/cmdline` the way any local user would, and proves both the alternative and the negative:
+  Reproduce all four claims in one command from the repository root on Linux/WSL2 (system Python 3; no extracted host, third-party binary, real API key, or real LLM):
+
+  ```bash
+  env -u PYTHONHOME -u PYTHONPATH python3 poc/21-check-argv-keys.py
+  ```
+
+  The script verifies the pinned SHA-256, reconstructing the release ELF from **this repo's `binary-drop` branch** into `/tmp/vapt/` if absent. It uses synthetic canaries and a loopback-only mock; non-loopback HTTP(S) is directed to a refusing loopback proxy. One test checks `/proc/<pid>/cmdline` from `nobody` when a passwordless privilege drop is available (otherwise only this optional cross-user check is skipped). Captured run:
 
   ```
-  == A. key on the command line ==
-     pid 3906, exit 63
-     /proc/3906/cmdline mode: 0o444
+  binary: /tmp/vapt/signal-pyarmor-linux-x86_64 (v1.0 SHA-256 verified)
+  == A. process-argument exposure (CWE-214) ==
+     pid 1938, exit 1
+     /proc/1938/cmdline mode: 0o444
      argv[4]: --llm-key
      argv[5]: CANARY_ARGV_F21_ARGV
-     PASS - any local user can read the key from /proc
+     other-user read (uid nobody): PASS
+     loopback requests using the key: 5
+     PASS - the accepted key is readable in the process argument list
   == B. the tool's own log ==
      masked occurrences: 1, raw occurrences: 0
      PASS - logs are redacted; the exposure is the process table
@@ -628,19 +638,16 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
      error: At least one LLM API key must be set
      PASS - .env is not a supported channel for this key
 
-     argv/config key handling: 4/4
+     F-07 reproduced: 4/4 (CWE-214)
   ```
 
-- **Steps to reproduce manually.**
-  1. Launch the tool with a canary key and an endpoint that does not answer promptly, so the process persists:
-     `./signal-pyarmor-linux-x86_64 --llm-mode byo --llm-uri http://10.255.255.1:9/v1 --llm-key CANARY_ARGV_F07_SECRET --llm-model m --llm-timeout 25 --check-llm true ./target &`
-  2. Read the argument vector as an unprivileged user: `tr '\0' '\n' < /proc/$PID/cmdline | grep -n -- '--llm-key' -A1` → the secret appears in cleartext.
-  3. Confirm `-r--r--r--` on `/proc/$PID/cmdline`.
-  4. Compare with the tool's own log: `grep -c CANARY_ARGV_F07_SECRET signal.log` → `0`, and `grep -o 'llm-key=[^ ]*' signal.log` → `--llm-key=********`. The redaction is working; the exposure is at the OS level.
+  The `exit 1` validation runs have a deliberately minimal mock (embedding/tokenizer tests cannot finish); they do **not** imply a completed scan. A separate normal-scan invocation confirms the application's own argv log masking. These later exit codes do not change the argument exposure while the process is running. Hosts with restricted procfs may block the cross-user read.
+
+- **Where the key may come from — and whether `.env` helps.** The byo-mode validator accepts a key from the flag or from the config file, and the file channel demonstrably works: a config carrying `key = CANARY_F21_CONFIG` with **no** `--llm-key` sent `Authorization: Bearer CANARY_F21_CONFIG` to the endpoint. A `.env` in the working directory is **not automatically read**: with the same config minus the key and `LLM_KEY`, `SIGNAL_LLM_KEY` and `OPENAI_API_KEY` present in `.env`, the run still exits 117 with `At least one LLM API key must be set` and sends zero requests. Config-file **environment interpolation does work**: `key = ${F07_ENV_KEY}` with that variable exported as `CANARY_F07_INTERPOLATED` produced five loopback requests carrying `Authorization: Bearer CANARY_F07_INTERPOLATED`, without a literal key in argv or the config file. By contrast, the generic `--llm-key '${F07_ENV_KEY}'` sent the *literal* `${F07_ENV_KEY}` as its Bearer value (five loopback requests); shell-expanding `--llm-key "$F07_ENV_KEY"` would put the resolved key back in argv. Prefer `--config` with mode 0600 and a protected secret source; `.env` requires explicit loading by the caller if used. Two details push users towards the unsafe channel: the validation error names only `--llm-key` and the per-agent flags (never the config file), and the tool does not check the config file's permissions — a world-readable `0644` file is accepted without comment.
 
 - **Impact.** Disclosure of LLM and cloud credentials to a local user or to CI log retention.
 
-- **Recommendation.** Make the config file the documented route: `--config` with mode 0600, and name it in the byo-mode validation error, which today advertises only the two flag forms. Do not add a `.env` loader — the config file is this tool's equivalent and already works. If the flag must remain, add `--llm-key-file <path>` or `--llm-key-fd <n>` and warn when a key arrives in `argv`. Reject a config file that group or other can read, and extend the existing log redaction to panic/abort handlers that may print `sys.argv`.
+- **Recommendation.** Make the config file the documented route: `--config` with mode 0600 and (where available) `key = ${SECRET_VAR}` with a value injected by the runtime's secret manager. Name that route in the byo-mode validation error, which currently advertises only the flags. A `.env` must be explicitly loaded by the caller; merely creating one is not enough. If the flag must remain, add `--llm-key-file <path>` or `--llm-key-fd <n>` and warn when a literal key arrives in `argv`. Reject a config file that group or other can read, and extend existing log redaction to panic/abort handlers that may print `sys.argv`.
 
 ---
 
@@ -1375,7 +1382,7 @@ Recorded so that the assessment is balanced and so these are not regressed:
 | 7 | Add an explicit acknowledgement gate and visible warning when TLS verification is disabled; steer users to `--llm-ca-bundle`; report TLS validation failures distinctly from generic connection errors. | F-06 |
 | 8 | Hardening pass on the bootloader: build PIE with full RELRO (`-z relro -z now`) and `-fcf-protection=full`; link a current zlib. | F-13, F-09 |
 | 9 | Stop describing obfuscation as a security control; supply allow-listing guidance for EDR products that flag PyArmor markers. | F-14 |
-| 10 | Document environment variables or a secrets file as the preferred credential path; keep the existing log redaction. | F-07 |
+| 10 | Document `--config` with mode 0600 (including `${SECRET_VAR}` interpolation from a secret manager); discourage literal keys in argv and keep the existing log redaction. | F-07 |
 | 11 | Route PoCKit through the per-agent LLM configuration (or honour `POCKIT_LLM_BASE_URL` when the operator sets it), print the effective PoCKit endpoint at startup, require acknowledgement of the separate egress and credential, and replace the `which("docker")` gate with a real capability probe plus post-execution verification that commands ran in the container. | F-15 |
 | 12 | Redact or refuse high-confidence secret material in outbound prompts, add an end-of-run egress summary (endpoint, request count, bytes), and document that analysed code leaves the machine. | F-16 |
 
@@ -1537,7 +1544,7 @@ Per-script invocation, required environment and expected output are in
 | `18-check-loading.py` | F-17 | Loader search path, setuid/capabilities, the run-time extraction directory's mode, `_PYI_*` spoofing attempts and the embedded PyInstaller version against GHSA-9fxf-4qw3-ghmr — `loading/privilege reproduced: 4/4` |
 | `19-check-xss.py` | F-18 | Renders a document through the shipped `utils/html_preview` with hostile message text, rule id, `src_label` and artifact path, then parses the result and counts script elements; also builds a real directory tree whose relative path is the payload — `preview injection reproduced: 5/5` |
 | `20-make-preview.py` | F-18 | Builds the `--result-preview` document through the shipped renderer with the payload as the scanned directory's name, writes `poc/captures/results.html`, then checks the payload script element, that the report data block is untouched, and executes the extracted script under Node with a stub DOM - `execution check: PASS` |
-| `21-check-argv-keys.py` | F-07 | Reads a canary `--llm-key` out of `/proc/<pid>/cmdline` as any local user, confirms the tool's own log masks it, then proves a config-file key reaches the endpoint unchanged and that a `.env` is not consulted - `argv/config key handling: 4/4` |
+| `21-check-argv-keys.py` | F-07 / CWE-214 | One-command, SHA-256-pinned binary from this repo's `binary-drop`; literal `--llm-key` is used by a loopback mock and read from `/proc/<pid>/cmdline` (optionally as `nobody`); checks log redaction, config-file alternative, and no automatic `.env` load - `F-07 reproduced: 4/4` |
 | `06-poc-f02-workspace.py` | F-02 | Path traversal via the GUID, symlink adoption under `exist_ok=True`, default mode `0o755` |
 | `07-poc-f06-tls-endpoint.py` | F-06 | Logging HTTPS endpoint with a self-signed certificate; captures the requests that verification-off lets through |
 | `08-collect-runtime-versions.py` | F-04, F-09, F-11, F-12 | Prints every security-relevant linked/loaded version from inside the reconstructed runtime |
