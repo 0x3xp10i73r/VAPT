@@ -188,6 +188,14 @@ def finish(p, timeout=120):
     return p.returncode, out or ""
 
 
+def show_check(number, title, passed, *details):
+    """Show the observed behavior first; PASS means verified, not 'secure'."""
+    print("%d/4  %s — %s" % (number, "PASS" if passed else "FAIL", title))
+    for detail in details:
+        print("     %s" % detail)
+    print()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", help="path to the v1.0 ELF (otherwise find or fetch it from this repo)")
@@ -200,7 +208,11 @@ def main():
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
         print("cannot use repository binary: %s" % exc, file=sys.stderr)
         return 2
-    print("binary: %s (v1.0 SHA-256 verified)" % binary)
+    print("F-07 / CWE-214 — Can a command-line API key be seen by others?")
+    print("Using FAKE keys; LLM requests go only to a local test server.")
+    print("PASS means an observation was confirmed, NOT that Signal is safe.")
+    print("Signal binary: v1.0 SHA-256 verified (%s)" % binary)
+    print()
 
     srv = start_mock()
     uri = "http://127.0.0.1:%d/v1" % srv.server_address[1]
@@ -228,26 +240,25 @@ def main():
             break
         time.sleep(0.01)
     other_ok, other_note = other_uid_read(p.pid, CANARY_ARGV) if CANARY_ARGV.encode() in raw else (None, "process exited")
-    rc, _ = finish(p)
+    finish(p)
 
     argv = [x.decode(errors="replace") for x in raw.split(b"\0") if x] if raw else []
     has_argv = any(argv[i:i + 2] == ["--llm-key", CANARY_ARGV] for i in range(len(argv) - 1))
     cli_auth = sum(r["auth"] == "Bearer " + CANARY_ARGV for r in srv.requests)
     results.append(has_argv and mode is not None and bool(mode & 0o004) and cli_auth > 0)
-    print("== A. process-argument exposure (CWE-214) ==")
-    print("   pid %d, exit %d" % (p.pid, rc))
-    print("   /proc/%d/cmdline mode: %s" % (p.pid, oct(mode) if mode else "gone"))
-    if has_argv:
-        i = argv.index("--llm-key")
-        print("   argv[%d]: --llm-key" % i)
-        print("   argv[%d]: %s" % (i + 1, argv[i + 1]))
-    if other_ok is None:
-        print("   other-user read: SKIP (%s)" % other_note)
+    if other_ok is True:
+        other_line = "Could a DIFFERENT local user read it? YES (tested as 'nobody')"
+    elif other_ok is False:
+        other_line = "Different-user read: NOT CONFIRMED (this host may restrict /proc)"
     else:
-        print("   other-user read (%s): %s" % (other_note, "PASS" if other_ok else "FAIL"))
-    print("   loopback requests using the key: %d" % cli_auth)
-    print("   %s - the accepted key is readable in the process argument list" %
-          ("PASS" if results[-1] else "FAIL"))
+        other_line = "Different-user check: SKIPPED (%s)" % other_note
+    show_check(1, "Key on the command line is exposed", results[-1],
+               "Started Signal with: --llm-key %s" % CANARY_ARGV,
+               "Found in Linux's process list (/proc/%d/cmdline): %s" %
+               (p.pid, "--llm-key " + CANARY_ARGV if has_argv else "KEY NOT FOUND"),
+               other_line,
+               "Did Signal use this fake key? %s (%d local test requests received it)" %
+               ("YES" if cli_auth else "NO", cli_auth))
 
     # --- B: the tool's own log masks it -------------------------------------
     # The --check-llm validation used for A returns *before* the regular scan
@@ -262,10 +273,10 @@ def main():
     masked = "llm-key=********" in log
     leaked = log.count(CANARY_ARGV)
     results.append(masked and leaked == 0)
-    print("== B. the tool's own log ==")
-    print("   masked occurrences: %d, raw occurrences: %d" % (log.count("llm-key=********"), leaked))
-    print("   %s - logs are redacted; the exposure is the process table" %
-          ("PASS" if masked and leaked == 0 else "FAIL"))
+    show_check(2, "Signal's own log hides the key, but the process list does not", results[-1],
+               "Log entry for --llm-key: %s" %
+               ("--llm-key=********" if masked else "NO MASKED ENTRY FOUND"),
+               "Fake key printed in Signal's log: %s" % ("YES" if leaked else "NO"))
 
     # --- C: a config file carries the key just as well ----------------------
     d = work / "c"
@@ -274,15 +285,16 @@ def main():
     (d / "cfg.signal").chmod(0o600)
     srv.requests.clear()
     p = run(binary, [str(target), "--config", "./cfg.signal", "--check-llm", "true"], cwd=d)
-    rc, _ = finish(p)
+    finish(p)
     auths = {r["auth"] for r in srv.requests}
-    cfg_ok = ("Bearer " + CANARY_CONFIG) in auths and "--llm-key" not in " ".join(p.args)
+    cfg_ok = ("Bearer " + CANARY_CONFIG) in auths and "--llm-key" not in p.args
     results.append(cfg_ok)
-    print("== C. key from --config only ==")
-    print("   exit %d, %d request(s) at the endpoint" % (rc, len(srv.requests)))
-    print("   Authorization: %s" % (sorted(auths)[0] if auths else "none"))
-    print("   %s - a config file is a working alternative to the flag" %
-          ("PASS" if cfg_ok else "FAIL"))
+    show_check(3, "Safer option: a protected config file works", results[-1],
+               "Put a different fake key in a private config file (mode 0600).",
+               "Was this key on the command line? %s" %
+               ("YES" if "--llm-key" in p.args else "NO"),
+               "Did Signal accept the config-file key? %s (%d local test requests)" %
+               ("YES" if "Bearer " + CANARY_CONFIG in auths else "NO", len(srv.requests)))
 
     # --- D: .env is not read ------------------------------------------------
     d = work / "d"
@@ -297,16 +309,26 @@ def main():
     env_used = bool(env_hits)
     msg = "At least one LLM API key must be set" in out
     results.append(msg and not env_used and rc == 117)
-    print("== D. .env in the working directory ==")
-    print("   exit %d, requests carrying a .env canary: %d" % (rc, len(env_hits)))
-    print("   error: %s" % ("At least one LLM API key must be set" if msg else "none"))
-    print("   %s - .env is not a supported channel for this key" %
-          ("PASS" if msg and not env_used and rc == 117 else "FAIL"))
+    show_check(4, "A .env file alone does NOT supply the key", results[-1],
+               "Created .env with fake LLM_KEY, SIGNAL_LLM_KEY and OPENAI_API_KEY values.",
+               "Signal's response: %s" %
+               ('"At least one LLM API key must be set"' if msg else "no missing-key error"),
+               "Local test server received a key from .env: %s" %
+               ("YES" if env_used else "NO"))
 
     srv.shutdown()
-    print()
-    print("   F-07 reproduced: %d/%d (CWE-214)" % (sum(results), len(results)))
-    print("   use --config with mode 0600; do not pass keys on the command line")
+    print("F-07 reproduced: %d/%d (CWE-214)" % (sum(results), len(results)))
+    if all(results):
+        if other_ok is True:
+            print("CONCLUSION: Another local account could read the fake API key while Signal ran.")
+        else:
+            print("CONCLUSION: The fake key appeared in the process list; access from a")
+            print("different account was not confirmed on this machine.")
+        print("RISK: Someone with local access could copy a real key passed via --llm-key.")
+        print("This does not by itself give a remote attacker access.")
+        print("Use --config with permission 0600 instead; .env is not auto-loaded.")
+    else:
+        print("INCONCLUSIVE: At least one check failed. See the FAIL lines above.")
     return 0 if all(results) else 1
 
 

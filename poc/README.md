@@ -721,12 +721,20 @@ env -u PYTHONHOME -u PYTHONPATH python3 poc/21-check-argv-keys.py
 It finds the exact v1.0 binary locally or reconstructs it from **this repo's
 `binary-drop` branch**, checks SHA-256, and needs no extraction, key, remote LLM,
 or tokenizer download. It creates synthetic keys, drives a loopback-only endpoint,
-and shows PASS/FAIL for argv exposure, log redaction, config-file fallback, and
-absence of automatic `.env` loading. Expected final line:
+and explains each PASS/FAIL in plain English: what appeared in the process list,
+whether another local account read it, whether Signal actually used that key,
+why log masking does not fix the leak, and which alternative works. **PASS means
+an observation was verified, not that Signal is secure.** Example conclusion
+from a host where the optional second-account check was available:
 
 ```text
 F-07 reproduced: 4/4 (CWE-214)
+CONCLUSION: Another local account could read the fake API key while Signal ran.
 ```
+
+The second-account check needs a passwordless privilege drop; if unavailable, it
+is explicitly skipped and the conclusion says that cross-user access was not
+confirmed on that host. The main process-list check still runs.
 
 The safer credential route is `--config` with a protected file. For example, the
 `[LLM]` section of that file can contain `key = ${SIGNAL_LLM_SECRET}`: an exported

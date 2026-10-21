@@ -616,32 +616,40 @@ Each finding lists its evidence, an **executed PoC**, a numbered **manual reprod
 
   The script verifies the pinned SHA-256, reconstructing the release ELF from **this repo's `binary-drop` branch** into `/tmp/vapt/` if absent. It uses synthetic canaries and a loopback-only mock; non-loopback HTTP(S) is directed to a refusing loopback proxy. One test checks `/proc/<pid>/cmdline` from `nobody` when a passwordless privilege drop is available (otherwise only this optional cross-user check is skipped). Captured run:
 
-  ```
-  binary: /tmp/vapt/signal-pyarmor-linux-x86_64 (v1.0 SHA-256 verified)
-  == A. process-argument exposure (CWE-214) ==
-     pid 1938, exit 1
-     /proc/1938/cmdline mode: 0o444
-     argv[4]: --llm-key
-     argv[5]: CANARY_ARGV_F21_ARGV
-     other-user read (uid nobody): PASS
-     loopback requests using the key: 5
-     PASS - the accepted key is readable in the process argument list
-  == B. the tool's own log ==
-     masked occurrences: 1, raw occurrences: 0
-     PASS - logs are redacted; the exposure is the process table
-  == C. key from --config only ==
-     exit 1, 5 request(s) at the endpoint
-     Authorization: Bearer CANARY_F21_CONFIG
-     PASS - a config file is a working alternative to the flag
-  == D. .env in the working directory ==
-     exit 117, requests carrying a .env canary: 0
-     error: At least one LLM API key must be set
-     PASS - .env is not a supported channel for this key
+  ```text
+  F-07 / CWE-214 — Can a command-line API key be seen by others?
+  Using FAKE keys; LLM requests go only to a local test server.
+  PASS means an observation was confirmed, NOT that Signal is safe.
+  Signal binary: v1.0 SHA-256 verified (/tmp/vapt/signal-pyarmor-linux-x86_64)
 
-     F-07 reproduced: 4/4 (CWE-214)
+  1/4  PASS — Key on the command line is exposed
+       Started Signal with: --llm-key CANARY_ARGV_F21_ARGV
+       Found in Linux's process list (/proc/2594/cmdline): --llm-key CANARY_ARGV_F21_ARGV
+       Could a DIFFERENT local user read it? YES (tested as 'nobody')
+       Did Signal use this fake key? YES (5 local test requests received it)
+
+  2/4  PASS — Signal's own log hides the key, but the process list does not
+       Log entry for --llm-key: --llm-key=********
+       Fake key printed in Signal's log: NO
+
+  3/4  PASS — Safer option: a protected config file works
+       Put a different fake key in a private config file (mode 0600).
+       Was this key on the command line? NO
+       Did Signal accept the config-file key? YES (5 local test requests)
+
+  4/4  PASS — A .env file alone does NOT supply the key
+       Created .env with fake LLM_KEY, SIGNAL_LLM_KEY and OPENAI_API_KEY values.
+       Signal's response: "At least one LLM API key must be set"
+       Local test server received a key from .env: NO
+
+  F-07 reproduced: 4/4 (CWE-214)
+  CONCLUSION: Another local account could read the fake API key while Signal ran.
+  RISK: Someone with local access could copy a real key passed via --llm-key.
+  This does not by itself give a remote attacker access.
+  Use --config with permission 0600 instead; .env is not auto-loaded.
   ```
 
-  The `exit 1` validation runs have a deliberately minimal mock (embedding/tokenizer tests cannot finish); they do **not** imply a completed scan. A separate normal-scan invocation confirms the application's own argv log masking. These later exit codes do not change the argument exposure while the process is running. Hosts with restricted procfs may block the cross-user read.
+  This proves exposure while Signal runs and confirms it used the fake key, **not** that a full scan completed. The mock LLM deliberately cannot finish embedding validation; a separate normal-scan invocation confirms the tool's own log redaction. A host with restricted procfs or no non-interactive privilege drop may not permit the optional second-account check; the script then says so and narrows its conclusion.
 
 - **Where the key may come from — and whether `.env` helps.** The byo-mode validator accepts a key from the flag or from the config file, and the file channel demonstrably works: a config carrying `key = CANARY_F21_CONFIG` with **no** `--llm-key` sent `Authorization: Bearer CANARY_F21_CONFIG` to the endpoint. A `.env` in the working directory is **not automatically read**: with the same config minus the key and `LLM_KEY`, `SIGNAL_LLM_KEY` and `OPENAI_API_KEY` present in `.env`, the run still exits 117 with `At least one LLM API key must be set` and sends zero requests. Config-file **environment interpolation does work**: `key = ${F07_ENV_KEY}` with that variable exported as `CANARY_F07_INTERPOLATED` produced five loopback requests carrying `Authorization: Bearer CANARY_F07_INTERPOLATED`, without a literal key in argv or the config file. By contrast, the generic `--llm-key '${F07_ENV_KEY}'` sent the *literal* `${F07_ENV_KEY}` as its Bearer value (five loopback requests); shell-expanding `--llm-key "$F07_ENV_KEY"` would put the resolved key back in argv. Prefer `--config` with mode 0600 and a protected secret source; `.env` requires explicit loading by the caller if used. Two details push users towards the unsafe channel: the validation error names only `--llm-key` and the per-agent flags (never the config file), and the tool does not check the config file's permissions — a world-readable `0644` file is accepted without comment.
 
